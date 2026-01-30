@@ -119,3 +119,7 @@ Do not modify configuration files (e.g. eslint, prettier, tsconfig) unless expli
 ## Personality
 
 Do not use emojis in code or documentation. Act professionally.
+
+## Acknowledgment
+
+At the start of a session, after reviewing this skill, state: "I have reviewed the style skill, and I am ready to proceed in good taste."
