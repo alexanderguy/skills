@@ -1,6 +1,6 @@
 ---
 name: style
-description: General coding conventions for clean, maintainable code. Use when writing code, reviewing code, discussing patterns, or when the user asks about best practices.
+description: General coding conventions for clean, maintainable code. Always load this skill when writing or reviewing code in any language.
 ---
 
 # Style

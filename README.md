@@ -33,7 +33,7 @@ Guidance for performing code reviews and pull request reviews. Includes:
 
 ### `/asg:style`
 
-**Invocation:** Auto-loaded when relevant (writing code, reviewing code, discussing patterns)
+**Invocation:** Auto-loaded by default
 
 General coding conventions that apply to any language:
 
