@@ -7,6 +7,15 @@ description: General coding conventions for clean, maintainable code. Use when w
 
 General guidelines for writing clean, maintainable code.
 
+## Git Repository Requirement
+
+Agents must only operate within git repositories. Before performing any work:
+
+1. Verify the current working directory is inside a git repository
+2. If not in a git repository, refuse to proceed
+
+Without a git repository, it's too hard to succeed with agents - changes can't be tracked, reviewed, or safely reverted.
+
 ## Documentation
 
 ### Avoiding Redundant Comments
