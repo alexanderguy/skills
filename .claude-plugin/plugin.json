@@ -1,0 +1,12 @@
+{
+  "name": "asg",
+  "description": "Development skills for code review and TypeScript conventions",
+  "version": "1.0.0",
+  "author": {
+    "name": "Alexander Guy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexanderguy/skills"
+  }
+}
