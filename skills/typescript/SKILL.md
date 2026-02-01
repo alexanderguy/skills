@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: TypeScript-specific coding conventions and type system patterns. Use when writing TypeScript code, reviewing TypeScript, discussing type system design, or when the user asks about TypeScript best practices.
+description: TypeScript-specific coding conventions and type system patterns. Always load this skill when writing or reviewing TypeScript code.
 ---
 
 # TypeScript
