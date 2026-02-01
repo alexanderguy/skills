@@ -25,6 +25,7 @@ TypeScript-specific guidelines for type safety and code organization.
 - Use `any` type (use `unknown` and narrow)
 - Use type assertions (`as Type`) - they indicate interface problems
 - Over-type code with explicit annotations the compiler can infer
+- Include file extensions in imports (unless required by runtime)
 
 ## Naming Conventions
 
@@ -320,6 +321,22 @@ import type { Handler } from "@myorg/types/handler";
 import { isValidTransaction } from "./verify";
 import { logger } from "./logger";
 ```
+
+### Import Paths
+
+Omit file extensions in import paths when the module resolver can infer them:
+
+```typescript
+// Good - no extension needed
+import { createHandler } from "./handler";
+import type { Config } from "../types";
+
+// Bad - unnecessary extension
+import { createHandler } from "./handler.ts";
+import type { Config } from "../types.ts";
+```
+
+Note: Some environments (like Deno or Node.js with `"type": "module"`) require explicit extensions. Follow project conventions when extensions are mandated by the runtime.
 
 ## Async Patterns
 
