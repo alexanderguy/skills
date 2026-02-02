@@ -19,6 +19,17 @@ claude --plugin-dir /path/to/this/repo
 
 ## Skills
 
+### `/asg:pull-request-review`
+
+**Invocation:** Manual only (use `/asg:pull-request-review` to invoke)
+
+Review a pull request by branch name or URL. This skill:
+
+- Accepts a branch name or GitHub/GitLab PR/MR URL
+- Creates a git worktree at `../worktree/<branch-name>` relative to repo root
+- Loads the `code-review` skill to perform the actual review
+- Keeps the worktree available for further investigation after review
+
 ### `/asg:code-review`
 
 **Invocation:** Manual only (use `/asg:code-review` to invoke)
