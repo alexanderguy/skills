@@ -5,8 +5,5 @@
   "author": {
     "name": "Alexander Guy"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alexanderguy/skills"
-  }
+  "repository": "https://github.com/alexanderguy/skills"
 }
