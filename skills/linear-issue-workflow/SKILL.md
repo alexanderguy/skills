@@ -2,6 +2,7 @@
 name: linear-issue-workflow
 description: Implement a feature or fix based on a Linear issue
 argument-hint: "<issue-id> [--reviewer <reviewer>]"
+disable-model-invocation: true
 ---
 
 # Linear Issue Workflow
