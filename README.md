@@ -1,4 +1,4 @@
-# asg - Claude Code Plugin
+# alexanderguy-skills - Claude Code Plugin
 
 Development skills for code review and coding conventions.
 
@@ -20,9 +20,17 @@ claude --plugin-dir /path/to/this/repo
 
 ## Skills
 
-### `/asg:pull-request-review`
+### `linear-issue-workflow`
 
-**Invocation:** Manual only (use `/asg:pull-request-review` to invoke)
+Structured workflow for implementing features or fixes tracked in Linear. Includes:
+
+- Fetching issue details and acceptance criteria
+- Creating implementation plans with user approval
+- Setting up git worktrees for isolated work
+- Self-review before pushing
+- PR creation with proper Linear issue linking
+
+### `pull-request-review`
 
 Review a pull request by branch name or URL. This skill:
 
@@ -31,9 +39,7 @@ Review a pull request by branch name or URL. This skill:
 - Loads the `code-review` skill to perform the actual review
 - Keeps the worktree available for further investigation after review
 
-### `/asg:code-review`
-
-**Invocation:** Manual only (use `/asg:code-review` to invoke)
+### `code-review`
 
 Guidance for performing code reviews and pull request reviews. Includes:
 
@@ -43,9 +49,7 @@ Guidance for performing code reviews and pull request reviews. Includes:
 - Test coverage philosophy (focus on business logic, trust libraries)
 - Review checklist
 
-### `/asg:style`
-
-**Invocation:** Auto-loaded by default
+### `style`
 
 General coding conventions that apply to any language:
 
@@ -56,9 +60,7 @@ General coding conventions that apply to any language:
 - Configuration files (don't modify unless asked)
 - Personality (no emojis, act professionally)
 
-### `/asg:typescript`
-
-**Invocation:** Auto-loaded when relevant (writing TypeScript, reviewing TypeScript, discussing type system design)
+### `typescript`
 
 TypeScript-specific conventions and type system patterns:
 
