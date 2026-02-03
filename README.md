@@ -14,7 +14,8 @@ claude --plugin-dir /path/to/this/repo
 
 ```bash
 # In Claude Code
-/plugin install https://github.com/alexanderguy/skills
+/plugin marketplace add alexanderguy/agent-marketplace
+/plugin install alexanderguy-skills@agent-plugins
 ```
 
 ## Skills
