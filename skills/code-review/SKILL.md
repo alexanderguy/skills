@@ -8,6 +8,59 @@ disable-model-invocation: true
 
 Use this skill when performing code reviews or pull request reviews.
 
+## Base Branch Determination
+
+Before reviewing, you must determine the correct base branch. Use these methods
+in order of reliability:
+
+### Method 1: Check for Associated PR/MR
+
+If the branch has an open pull request or merge request, use the PR's target:
+
+```bash
+# GitHub
+gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null
+
+# GitLab
+glab mr view --output json 2>/dev/null | jq -r '.target_branch'
+```
+
+### Method 2: Check Upstream Tracking
+
+If the branch tracks a remote branch that itself branched from somewhere:
+
+```bash
+git config --get branch.<branch-name>.merge
+```
+
+### Method 3: Find Merge Base with Default Branches
+
+Attempt to find a common ancestor with likely default branches:
+
+```bash
+# Check if main or master exists and find merge-base
+for base in main master develop; do
+  if git rev-parse --verify "origin/$base" >/dev/null 2>&1; then
+    merge_base=$(git merge-base "origin/$base" HEAD)
+    echo "$base: $merge_base"
+  fi
+done
+```
+
+This helps identify which branch HEAD diverged from, but does not guarantee
+the intent of the branch author.
+
+### When Base Cannot Be Determined
+
+If none of the above methods provide a clear answer, do not assume. Ask the user:
+
+> I cannot determine which branch this was based off. What branch should I use
+> as the base for comparison? Common options include `main`, `master`, or
+> `develop`.
+
+Proceeding with an incorrect base will cause the review to include out-of-scope
+changes or miss in-scope changes.
+
 ## Scope Determination
 
 Focus only on commits that are contained within the branch being reviewed.
@@ -69,7 +122,7 @@ testing, that suggests reconsidering whether to use that library.
 
 ## Review Checklist
 
-1. Determine the base branch (usually `main`)
+1. Determine the base branch using the methods in "Base Branch Determination"
 2. Run `git log --oneline <base>..HEAD` to understand the scope
 3. Run `git diff <base>...HEAD --stat` to see which files changed
 4. Review each changed file, focusing only on lines modified by the branch
