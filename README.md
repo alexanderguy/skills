@@ -60,6 +60,17 @@ General coding conventions that apply to any language:
 - Configuration files (don't modify unless asked)
 - Personality (no emojis, act professionally)
 
+### `philosophy`
+
+Engineering philosophy and work culture principles. Load this skill when making architectural decisions or to understand the team's work principles.
+
+- Guiding principles (pragmatic over idealistic, do no harm, benevolent dictatorship)
+- Collaboration and communication culture (public discussion, respect, learning from others)
+- Testing philosophy (tests as friends, safe refactoring)
+- Automation timing and tool-building (automate by the third time)
+- Business context (engineering/sales symbiotic relationship)
+- Issue management (self-contained, 2-3 day sizing, status updates)
+
 ### `typescript`
 
 TypeScript-specific conventions and type system patterns:
