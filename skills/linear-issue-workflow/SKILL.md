@@ -52,11 +52,31 @@ Get the branch name from Linear:
 Task(subagent_type="linear", prompt="Get the git branch name for issue <ISSUE-ID>")
 ```
 
-Create a worktree to keep the main repo clean:
+Determine the repository's default branch:
 
 ```bash
-git worktree add ../worktree/<branch-name> -b <branch-name>
+git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
 ```
+
+Fetch the latest changes and create a worktree based on the remote default branch:
+
+```bash
+git fetch origin
+git worktree add ../worktree/<branch-name> -b <branch-name> origin/<default-branch>
+```
+
+**Important**: Always base new branches on `origin/<default-branch>` (where `<default-branch>` is `main`, `master`, or whatever the repository uses). This ensures your branch starts from the latest remote state, even if your local default branch is out of date.
+
+After creating the worktree:
+
+```bash
+cd ../worktree/<branch-name>
+```
+
+Then install local dependencies (look at developer documentation for how to do this).
+
+
+Worktrees share the `.git` directory but have their own working directory. The `node_modules` directory is NOT shared, so each worktree needs its own dependency installation.
 
 All subsequent work happens in the worktree directory.
 
@@ -87,6 +107,27 @@ Before pushing, load the `code-review` skill and perform a self-review of your c
 
 After the review passes, ask the user for confirmation before pushing and creating the PR.
 
+### Post review to PR
+
+After creating the PR, post a summary of the code review as a comment:
+
+```bash
+gh pr comment <PR-NUMBER> --body "$(cat <<'EOF'
+## Self-Review Summary
+
+<summary of what was reviewed and any issues found/fixed>
+
+### Files Reviewed
+
+- `path/to/file.ts`: <brief assessment>
+
+### Issues Found and Resolved
+
+<list any issues found during self-review and how they were fixed, or "None">
+EOF
+)"
+```
+
 ### Push and create PR
 
 ```bash
@@ -111,6 +152,23 @@ gh pr create \
 Closes <ISSUE-ID>
 EOF
 )"
+```
+
+## Phase 7: Cleanup After Merge
+
+After the PR has been merged, clean up the worktree and local branch:
+
+```bash
+# From the main repository directory (not the worktree)
+git fetch origin
+git worktree remove ../worktree/<branch-name>
+git branch -d <branch-name>
+```
+
+If the worktree directory was already manually deleted, prune stale worktree references:
+
+```bash
+git worktree prune
 ```
 
 ## Linear Subagent Patterns
