@@ -50,6 +50,16 @@ result = await legacyMethod()
 
 ### Commit Messages
 
+Commits should read like a story, allowing others and future-you to understand why changes were made.
+
+**Commit Organization:**
+
+- Separate refactoring from feature additions (distinct commits)
+- Separate formatting/whitespace fixes from logical changes
+- Each commit should represent one logical unit of work
+
+**Message Format:**
+
 - **Summary line**: Max 72 characters, non-empty
 - **Blank line**: Required between summary and body (if body exists)
 - **Body lines**: Max 72 characters each
@@ -101,6 +111,21 @@ When a refactor might be necessary, prompt the user with specific options:
 
 Allow the user to provide their own answer if none of the options fit.
 
+## External Code Attribution
+
+Any code from outside the organization requires careful attribution and licensing compliance:
+
+1. **License verification**: Check that the license is compatible with your project
+2. **Isolated commit**: Place external code in its own commit without any modifications
+3. **Complete attribution**: Include in the commit message:
+   - Original source URL or reference
+   - Author/copyright information
+   - License type
+   - Date retrieved
+   - Any other details required for audit compliance
+
+If modifications to external code are needed, make them in a separate follow-up commit with clear explanation of what changed and why.
+
 ## Build Verification
 
 Always run the full build command before declaring any task complete.
@@ -115,6 +140,8 @@ Never silently skip a failing step or substitute a partial build.
 ## Configuration Files
 
 Do not modify configuration files (e.g. eslint, prettier, tsconfig) unless explicitly asked. Focus on writing working software, not changing the conventions that are being used.
+
+Keep consistent even if we disagree; if we decide to change a style, make it an explicit decision and discussion, not a side effect of other work.
 
 ## Personality
 
