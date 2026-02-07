@@ -75,7 +75,6 @@ cd ../worktree/<branch-name>
 
 Then install local dependencies (look at developer documentation for how to do this).
 
-
 Worktrees share the `.git` directory but have their own working directory. The `node_modules` directory is NOT shared, so each worktree needs its own dependency installation.
 
 All subsequent work happens in the worktree directory.
@@ -130,9 +129,22 @@ EOF
 
 ### Push and create PR
 
+Fetch the latest changes and rebase before pushing:
+
+```bash
+git fetch origin
+git rebase origin/<default-branch>
+```
+
+Verify the build still passes after rebasing, then push:
+
 ```bash
 git push -u origin <branch-name>
+```
 
+Create the PR:
+
+```bash
 gh pr create \
   --title "<title>" \
   --reviewer <REVIEWER> \
