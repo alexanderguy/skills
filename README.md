@@ -20,6 +20,16 @@ claude --plugin-dir /path/to/this/repo
 
 ## Skills
 
+### `linear-create`
+
+Create well-structured Linear issues, projects, or initiatives. This skill:
+
+- Analyzes scope to determine the appropriate artifact type
+- Interviews for missing information (problem, acceptance criteria, goals)
+- Drafts content following conventions (verb phrase titles, checkbox acceptance criteria)
+- Breaks down large features into properly-sized issues with dependencies
+- Creates artifacts in Linear with proper linking and relationships
+
 ### `linear-issue-workflow`
 
 Structured workflow for implementing features or fixes tracked in Linear. Includes:
