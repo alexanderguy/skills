@@ -1,19 +1,48 @@
 ---
 name: linear-create
 description: Create well-structured Linear issues, projects, or initiatives
-argument-hint: "<description or 'breakdown: <feature>'>"
+argument-hint: "[description] [--from-doc]"
 ---
 
 # Linear Create
 
 Use this skill to create properly structured Linear artifacts. Based on the scope of work, this skill will create the appropriate combination of issues, projects, and/or initiatives.
 
-## Phase 1: Analyze Input
+## Prerequisites
+
+Before doing anything else, verify the `linear` subagent is available by checking if it appears in your available agent types. If it is not available, inform the user:
+
+> The Linear integration is not available. Please ensure the Linear MCP server is configured and try again.
+
+Do not proceed with any other phases until this check passes.
+
+## Phase 1: Document Discovery
+
+When the user provides `--from-doc` or mentions a planning document, search for scribe-managed documents:
+
+1. Look for `PRODUCT.md`, `ARCHITECTURE.md`, `IMPLEMENTATION.md` in:
+   - Repository root
+   - `docs/` directory
+
+2. If no documents are found, ask the user:
+   > I couldn't find any planning documents. Do you have a document you'd like me to reference?
+
+3. When a document is found, read it and extract:
+   - Features or work items mentioned
+   - Technical context and constraints
+   - Scope indicators (timeline mentions, complexity signals)
+
+Use extracted information to:
+- Pre-populate issue descriptions with relevant context
+- Propose appropriate artifact types based on scope
+- Ask targeted follow-up questions for gaps not covered by the document
+
+## Phase 2: Analyze Input
 
 Determine what the user wants to create:
 
 1. **Explicit request**: User specifies artifact type ("create an issue for...", "create a project for...")
-2. **Breakdown request**: User says "breakdown: <feature>" or describes something large that needs decomposition
+2. **From document**: User provides `--from-doc` to extract work items from planning documents
 3. **Freeform**: User describes work without specifying type
 
 For freeform input, estimate the scope:
@@ -26,7 +55,7 @@ For freeform input, estimate the scope:
 
 Present your assessment to the user and confirm before proceeding.
 
-## Phase 2: Interview
+## Phase 3: Interview
 
 If information is missing, ask targeted questions. Keep interviews brief and focused.
 
@@ -58,7 +87,7 @@ Required information:
 - Who is the executive owner?
 - What projects should be included?
 
-## Phase 3: Draft Content
+## Phase 4: Draft Content
 
 Create drafts following these conventions:
 
@@ -68,7 +97,7 @@ Create drafts following these conventions:
 
 - Good: "Add retry logic for failed API calls"
 - Good: "Fix race condition in transaction verification"
-- Good: "Create market validation track for Interchange"
+- Good: "Create market validation track for <product-name>"
 - Bad: "API retry" (too vague)
 - Bad: "Bug in transactions" (not actionable)
 
@@ -88,6 +117,12 @@ Create drafts following these conventions:
 ```
 
 For simple tasks, you can omit `# Background` and use only `# Outcome` with checkboxes.
+
+**Labels and Priority**:
+
+- Set priority based on urgency and impact
+- Apply labels for categorization (e.g., bug, feature, tech-debt) if the workspace uses them
+- Ask the user about priority and labels if not specified
 
 When appropriate, use subsections under `# Outcome` to organize related items:
 
@@ -109,7 +144,7 @@ When appropriate, use subsections under `# Outcome` to organize related items:
 
 **Name**: Outcome-focused description
 - Good: "User authentication with SSO support"
-- Good: "Get 10 Customer Leads for Interchange Through Direct BD"
+- Good: "Get 10 customer leads for <product-name> through direct outreach"
 - Bad: "Auth work"
 
 **Description**: Goal, scope, and any constraints.
@@ -138,7 +173,7 @@ Experiment
 
 **Description**: Include as much information as needed to convey the business goal and how success will be measured. If unsure what to include, prompt the user for guidance.
 
-## Phase 4: Review and Adjust
+## Phase 5: Review and Adjust
 
 Present the complete draft to the user:
 
@@ -147,7 +182,7 @@ I propose creating:
 
 **Project**: Add user authentication
 - Lead: <to be assigned>
-- Target: Q2 2024
+- Target: <target-quarter>
 - Milestones:
   1. Basic auth flow complete
   2. SSO integration complete
@@ -168,7 +203,27 @@ Allow the user to:
 - Add or remove items
 - Specify assignees or teams
 
-## Phase 5: Create in Linear
+## Phase 6: Create in Linear
+
+### Workspace Discovery
+
+Before creating artifacts, query the Linear workspace:
+
+- **Teams**: Always query available teams and ask the user which team should own issues or projects
+- **Projects**: Query existing projects if the user mentions adding to an existing project
+- **Initiatives**: Query existing initiatives if linking to one
+
+Example queries:
+
+```
+Task(description="Query Linear teams", prompt="List available teams in the workspace", subagent_type="linear")
+Task(description="Query Linear projects", prompt="List active projects in team <team-name>", subagent_type="linear")
+Task(description="Query Linear initiatives", prompt="List initiatives", subagent_type="linear")
+```
+
+Present options to the user when multiple choices exist.
+
+### Creating Artifacts
 
 After user approval, create artifacts using the `linear` subagent:
 
@@ -181,21 +236,29 @@ After user approval, create artifacts using the `linear` subagent:
 Example subagent calls:
 
 ```
-Task(subagent_type="linear", prompt="Create a project titled 'User authentication with SSO support' with target date Q2 2024, description: '<description>'")
+Task(description="Create Linear project", prompt="Create a project titled 'User authentication with SSO support' with target date <target-date>, description: '<description>'", subagent_type="linear")
 
-Task(subagent_type="linear", prompt="Create an issue titled 'Set up authentication database schema' with description: '<desc>' and acceptance criteria: '<ac>', add to project <project-id>")
+Task(description="Create Linear issue", prompt="Create an issue titled 'Set up authentication database schema' with description: '<desc>' and acceptance criteria: '<ac>', add to project <project-id>", subagent_type="linear")
 
-Task(subagent_type="linear", prompt="Set issue <issue-B-id> as blocked by <issue-A-id>")
+Task(description="Set issue dependency", prompt="Set issue <issue-B-id> as blocked by <issue-A-id>", subagent_type="linear")
 ```
 
 Report created artifacts to the user with their URLs.
 
+## Error Handling
+
+If Linear creation fails:
+
+1. Report the error to the user with any details provided by the API
+2. List what was successfully created before the failure (with URLs if available)
+3. Do not proceed with dependent artifacts if a parent fails (e.g., don't create issues if project creation failed)
+4. Ask if they want to retry or adjust the request
+
 ## Quality Reminders
 
-From the philosophy skill:
-- Issues should be self-contained (handoff-ready at any moment)
-- Single issue = 2-3 days max implementation time
-- Use many tickets if needed for clarity
+- Issues should be self-contained and handoff-ready at any moment
+- A single issue should take no more than 2-3 days to implement
+- Use many tickets if needed for clarity; they're cheap
 - Status updates in tickets reduce interruptions
 
 If an issue looks like it will take more than 3 days, suggest breaking it down.
@@ -250,23 +313,23 @@ Issues:
 ### Validation Project
 
 ```
-User: "We need to validate if customers want our new Interchange product"
+User: "We need to validate if customers want our new <product-name> product"
 
-Project: Get 10 Customer Leads for Interchange Through Direct BD
+Project: Get 10 customer leads for <product-name> through direct outreach
   Lead: <to be assigned>
   Target: 2 weeks
   Description:
-    Hypothesis - Teams we know and can reach out to have a need for Interchange.
+    Hypothesis - Teams we know and can reach out to have a need for <product-name>.
 
     Experiment
     Direct Outreach
 
-    * Create list of targets
-    * Create collateral if needed
-    * Create strategy for outreach including any templates
-    * Execute outreach
-    * Conduct customer interviews
-    * Analyze results
+    - [ ] Create list of targets
+    - [ ] Create collateral if needed
+    - [ ] Create strategy for outreach including any templates
+    - [ ] Execute outreach
+    - [ ] Conduct customer interviews
+    - [ ] Analyze results
 
   Milestones:
     1. Target list and collateral ready
@@ -275,7 +338,7 @@ Project: Get 10 Customer Leads for Interchange Through Direct BD
     4. Analysis complete
 
 Issues:
-  1. "Create target list for Interchange outreach"
+  1. "Create target list for <product-name> outreach"
   2. "Create outreach collateral and templates"
   3. "Execute outreach campaign"
      - Blocked by: #1, #2
@@ -291,12 +354,45 @@ Issues:
 User: "We need to expand our platform to support enterprise customers"
 
 Initiative: Enterprise platform expansion
-  Owner: <VP Engineering>
-  Target: Q3 2024
+  Owner: <executive-owner>
+  Target: <target-quarter>
 
 Projects:
   1. "Multi-tenant architecture" - Isolate customer data and resources
   2. "Enterprise SSO integration" - Support SAML and OIDC providers
   3. "Admin dashboard" - Self-service management for enterprise admins
   4. "Audit logging" - Compliance-ready activity tracking
+```
+
+### Planning Document to Issues
+
+```
+User: "Create issues from our product doc" or "--from-doc"
+
+[Skill searches for PRODUCT.md, ARCHITECTURE.md, IMPLEMENTATION.md]
+[Finds PRODUCT.md with feature descriptions]
+
+Skill: I found PRODUCT.md which describes the following features:
+  - User authentication with SSO
+  - Usage metrics dashboard
+  - Export functionality
+
+Based on the document, I propose:
+
+**Project**: User authentication with SSO support
+  (From PRODUCT.md: "Users need secure login with enterprise SSO...")
+
+**Issues**:
+  1. "Implement basic email/password authentication"
+     # Background
+     From PRODUCT.md: Users need secure login...
+
+     # Outcome
+     - [ ] Users can register with email/password
+     - [ ] Users can log in and log out
+
+  2. "Integrate SAML SSO provider"
+     ...
+
+Which features would you like me to create issues for?
 ```
