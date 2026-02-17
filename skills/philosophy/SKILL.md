@@ -46,6 +46,24 @@ Key philosophical points:
 
 See the `style` skill for detailed formatting rules and technical specifications.
 
+## Constraint Ownership
+
+Every system has layers. Constraints belong in exactly one layer — the one that has enough information to enforce them correctly.
+
+When a downstream function re-checks conditions that an upstream function already guarantees, you get duplication that eventually conflicts. When callers pre-process inputs to satisfy invariants the callee already enforces, you get unnecessary complexity. When three layers all enforce the same rule, two of them are unnecessary and one of them is probably wrong.
+
+Find the layer that owns the constraint. Fix it there. Trust it everywhere else.
+
+**Before fixing a bug, answer these questions:**
+
+1. What invariant is being violated?
+2. Which layer is responsible for enforcing that invariant?
+3. Does that layer already attempt to enforce it?
+
+If the answer to (3) is yes, fix that layer — not a downstream consumer. If your fix requires changes in more than one module, stop and explain which layer owns the constraint and why.
+
+If you have made two or more fix commits to the same subsystem without resolving the issue, you are symptom-chasing. Describe the constraint violation and ask where it should be fixed.
+
 ## Testing Philosophy
 
 **Tests are primarily there to verify required behavior is being followed. They're your friend.**
