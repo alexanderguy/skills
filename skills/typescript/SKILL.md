@@ -18,12 +18,14 @@ TypeScript-specific guidelines for type safety and code organization.
 - Prefer factory functions over classes
 - Return `null` from handlers when request doesn't match
 - Use a logger instead of `console.log`
+- Validate external data at runtime (fetch, filesystem, env vars, user input) with an existing validation library
 
 ### Don't
 
 - Use default exports
 - Use `any` type (use `unknown` and narrow)
 - Use type assertions (`as Type`) - they indicate interface problems
+- Assume type assertions provide runtime safety - they don't
 - Over-type code with explicit annotations the compiler can infer
 - Include file extensions in imports (unless required by runtime)
 
@@ -94,7 +96,7 @@ Note: "ID" is an abbreviation, so use standard camelCase: `userId`, `requestId`,
 
 ### Runtime Validation
 
-Use a validation library (e.g., arktype, zod) for runtime type validation. Define the validator and TypeScript type together:
+Use a validation library (e.g., arktype, zod, typebox) for runtime type validation. Define the validator and TypeScript type together:
 
 ```typescript
 import { type } from "arktype";
@@ -110,6 +112,10 @@ export const PaymentRequest = type({
 // Derive TypeScript type from validator
 export type PaymentRequest = typeof PaymentRequest.infer;
 ```
+
+If no existing validation library is installed, install arktype and use it.
+
+This pattern should be used for all external data: API responses from `fetch`, file system reads, environment variables, user input, and third-party API responses.
 
 ### Type Guards
 
@@ -218,6 +224,14 @@ const createHandler = async (network: string): Promise<{
 
 ### Avoiding `any` and Type Assertions
 
+Type assertions (`as Type`) only affect compile-time types. They provide **zero runtime safety**. A type assertion tells TypeScript "trust me, this is the shape" but does nothing at runtime.
+
+This is especially critical for external data. Data from `fetch`, the filesystem, environment variables, user input, and third-party APIs **always needs runtime validation** because:
+
+1. The TypeScript type is just a guess about the actual data shape
+2. The network/file/env can return anything, not what you expected
+3. External data can be malformed, malicious, or changed without warning
+
 Use `unknown` instead of `any` when the type is truly unknown, then narrow with validation:
 
 ```typescript
@@ -236,7 +250,7 @@ function processData(data: unknown) {
 }
 ```
 
-Type assertions (`as Type`) bypass type checking. They often indicate interface problems. Prefer runtime validation:
+Type assertions bypass type checking and often indicate interface problems. Prefer runtime validation:
 
 ```typescript
 // Bad
