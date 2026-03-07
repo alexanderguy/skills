@@ -49,6 +49,16 @@ Review a pull request by branch name or URL. This skill:
 - Loads the `code-review` skill to perform the actual review
 - Keeps the worktree available for further investigation after review
 
+### `dispatch`
+
+Orchestrate parallel subagent execution with DAG-based scheduling. This skill:
+
+- Breaks goals into tasks with dependency edges, fans out to parallel subagents
+- Validates plans before executing, critiques results before accepting
+- Runs quality gates (build, test, lint) with iterative fix loops and escalation
+- Orchestrates commits after verification with configurable strategy and approval
+- Supports resumability from `dispatch.yaml` state
+
 ### `code-review`
 
 Guidance for performing code reviews and pull request reviews. Includes:
