@@ -128,7 +128,7 @@ verify:
       command: "bun test:integration"
 
 critique:
-  enabled: false             # global default; tasks can override
+  enabled: true              # global default; tasks can override
   agent: general             # must be general (needs to write critique.yaml); reserved for forward compatibility
 
 commits:
@@ -388,7 +388,20 @@ If the critique agent fails to produce a valid `critique.yaml` (crashes, times o
 
 Critique agents count toward `max-parallel`.
 
-If critique is not enabled for the task, mark it `completed` immediately. Critique is not applicable to `explore` agents (they produce no file changes). If critique is enabled on an explore task, ignore it and mark the task `completed` directly.
+If critique is not enabled for the task, mark it `completed` immediately.
+
+For `explore` agents, critique works differently since there are no file changes to review. Instead, the critique agent verifies the explore agent's findings against the actual codebase:
+
+1. Spawn a critique agent (type `general`) that receives:
+   - The original `plan.md` (what was asked)
+   - The `output.yaml` (the explore agent's findings, written by the orchestrator)
+   - The repository root and task directory paths
+   - The explore critique prompt (below) or a custom `critique.prompt` if provided
+2. The critique agent independently checks the codebase to verify key claims -- file existence, pattern identification, function signatures, module structure, etc.
+3. The critique agent writes `critique.yaml` to the task directory
+4. Based on the verdict:
+   - `accepted`: mark the task `completed`
+   - `needs-work`: mark the task `fixing`, create a fix task. The fix task is an `explore` agent that re-investigates, receiving the critique issues as context. The orchestrator writes a new `output.yaml` on the fix task's behalf as usual for explore agents.
 
 #### critique.yaml format
 
@@ -429,6 +442,33 @@ Write critique.yaml to your task directory with your verdict
 (accepted | needs-work) and a list of specific issues with severity
 (blocking | warning | nit).
 Only blocking issues should result in a needs-work verdict.
+```
+
+#### Default explore critique prompt
+
+When critiquing an `explore` agent and no custom `critique.prompt` is provided:
+
+```
+You are verifying the research findings of another agent. You have:
+
+1. The original plan (plan.md) describing what was asked
+2. The agent's findings (output.yaml)
+
+Your job is to independently verify key claims against the actual
+codebase. Do NOT take the findings at face value.
+
+Check whether:
+- Referenced files and directories actually exist
+- Function signatures, type definitions, and exports match what was reported
+- Patterns described (e.g., "all routes use X middleware") are accurate
+- Important files or patterns were not missed
+- The conclusions follow from the evidence in the codebase
+
+Write critique.yaml to your task directory with your verdict
+(accepted | needs-work) and a list of specific issues with severity
+(blocking | warning | nit).
+Only blocking issues should result in a needs-work verdict.
+A finding that downstream tasks will rely on being wrong is blocking.
 ```
 
 ### Step 3b: Fix task resolution
