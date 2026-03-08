@@ -25,6 +25,7 @@ TypeScript-specific guidelines for type safety and code organization.
 - Use default exports
 - Use `any` type (use `unknown` and narrow)
 - Use type assertions (`as Type`) - they indicate interface problems
+- Use non-null assertions (`x!`) - they hide nullability bugs
 - Assume type assertions provide runtime safety - they don't
 - Over-type code with explicit annotations the compiler can infer
 - Include file extensions in imports (unless required by runtime)
@@ -263,6 +264,41 @@ if (isValidationError(data)) {
   throw new Error(`Invalid response: ${data.summary}`);
 }
 ```
+
+### Avoiding Non-Null Assertions
+
+The non-null assertion operator (`x!`) has the same problem as `as Type`: it's a compile-time lie. It tells TypeScript "trust me, this isn't null or undefined" when the compiler thinks it could be. If the compiler thinks a value might be null, there's usually a reason.
+
+Instead of silencing the compiler, restructure the code so the value is provably non-null:
+
+```typescript
+// Bad - hiding a potential bug
+const user = users.find(u => u.id === id)!;
+processUser(user);
+
+// Good - handle the null case
+const user = users.find(u => u.id === id);
+if (!user) {
+  throw new Error(`User not found: ${id}`);
+}
+processUser(user);
+```
+
+```typescript
+// Bad - asserting map result exists
+const handler = handlers.get(name)!;
+
+// Good - check and provide a meaningful error
+const handler = handlers.get(name);
+if (!handler) {
+  throw new Error(`No handler registered for: ${name}`);
+}
+```
+
+If you find yourself reaching for `!`, it means one of:
+- The code doesn't properly guarantee the value exists (fix the code)
+- The type is too wide for the context (narrow it with a guard or restructure)
+- An upstream function returns `T | null` when it shouldn't (fix the upstream function)
 
 ### Generic Constraints vs Index Signatures
 
