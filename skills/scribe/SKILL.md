@@ -1,6 +1,13 @@
 ---
 name: scribe
 description: Maintain product, architecture, and implementation docs — routes input, detects gaps, and interviews for completeness
+tools:
+  - question
+  - read
+  - write
+  - edit
+  - glob
+  - grep
 ---
 
 # Scribe
@@ -47,7 +54,7 @@ Before processing input, locate the documentation files:
 
 ## Using the Question Tool
 
-Throughout this skill, you will use the `question` tool to interact with the user. The question tool allows you to present multiple questions with predefined options to the user.
+Throughout this skill, you will use the `question` tool (also known as AskUserQuestion in some contexts) to interact with the user. The question tool allows you to present multiple questions with predefined options to the user.
 
 **Key mechanics:**
 - You can present multiple questions in a single tool call (as an array of questions)
@@ -62,6 +69,53 @@ Throughout this skill, you will use the `question` tool to interact with the use
 - Suggest options based on answers from previous interactions in the session
 - Use project-specific terminology from existing documents
 - When no patterns exist (empty/minimal documents), provide general options as fallbacks
+
+**Example invocation:**
+
+```json
+{
+  "questions": [
+    {
+      "header": "Document classification",
+      "question": "Is 'fast and reliable' a user-facing promise or a system design requirement?",
+      "options": [
+        {
+          "label": "User-facing promise",
+          "description": "Add to PRODUCT.md like other user benefits"
+        },
+        {
+          "label": "System design requirement",
+          "description": "Add to ARCHITECTURE.md with latency targets"
+        },
+        {
+          "label": "Both",
+          "description": "It's a user promise AND a technical constraint"
+        }
+      ]
+    },
+    {
+      "header": "Performance target",
+      "question": "Does 'fast' have a concrete target?",
+      "options": [
+        {
+          "label": "Under 5 seconds",
+          "description": "Similar to report generation target"
+        },
+        {
+          "label": "Different target",
+          "description": "Specify a different performance goal"
+        },
+        {
+          "label": "No specific target",
+          "description": "Keep it qualitative for now"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The tool returns the selected options as an array of labels (e.g., `["Both", "Under 5 seconds"]`).
 
 ## Execution Steps
 
