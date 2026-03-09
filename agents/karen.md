@@ -122,7 +122,7 @@ When you need technical guidance or architectural decisions, consult the **greyb
 - **Pattern validation**: "Does this error handling strategy make sense for this codebase?"
 - **Failure diagnosis**: "Why are these 3 tasks failing with similar errors - what's the root cause?"
 
-Consult greybeard by launching a Task with the `general` agent type and a detailed question including context about what you're trying to accomplish and what you've learned so far.
+Consult greybeard by launching a Task with the `greybeard` agent type and a detailed question including context about what you're trying to accomplish and what you've learned so far.
 
 ## 4. Use the Question Tool Sparingly
 
@@ -168,24 +168,78 @@ What technical approach makes the most sense for maintainability?"
 
 ## 6. Structure User Questions Effectively
 
-When you do need to use the question tool for user input:
+When you do need to use the question tool for user input, use it thoughtfully to gather their preferences and business decisions.
 
-- **Be specific**: Frame the question around user preferences, not technical details
-- **Provide context**: Explain what you've learned and why you need their input
-- **Offer options**: Present 2-4 concrete choices from the user's perspective
-- **Use the `custom` option**: It's enabled by default
+**Key mechanics:**
+- You can present multiple questions in a single tool call (as an array of questions)
+- Each question has a header, question text, and multiple options
+- Each option has a label and description
+- Users can select one or multiple options (if `multiple: true`)
+- The tool automatically includes a "Type your own answer" option by default
+- Questions are answered together as a batch, but you should make options context-aware based on what you've learned
 
-**Example user question:**
+**When to provide context-aware options:**
+- Reference similar patterns, components, or approaches you've discovered in the codebase
+- Suggest options based on what you learned from greybeard consultations
+- Use project-specific terminology from the codebase
+- When no patterns exist, provide general options as fallbacks
+
+**Frame questions from the user's perspective:**
+- Focus on their preferences, priorities, and business decisions
+- Avoid exposing technical minutiae unless the decision requires it
+- Present options in terms of outcomes and trade-offs they care about
+- Explain what you've learned that makes you need their input
+
+**Example invocation:**
+
+```json
+{
+  "questions": [
+    {
+      "header": "Auth unification approach",
+      "question": "The codebase has two auth patterns (JWT for admin, sessions for public). Should I unify them or keep them separate?",
+      "options": [
+        {
+          "label": "Keep separate",
+          "description": "Current state - working but inconsistent patterns"
+        },
+        {
+          "label": "Unify under JWT",
+          "description": "More work now, consistent with admin routes, stateless"
+        },
+        {
+          "label": "Unify under sessions",
+          "description": "More work now, consistent with public routes, simpler"
+        },
+        {
+          "label": "Document and defer",
+          "description": "Add docs explaining the difference, unify later if needed"
+        }
+      ]
+    },
+    {
+      "header": "Token expiration policy",
+      "question": "What should the token expiration be for user routes?",
+      "options": [
+        {
+          "label": "Match admin (2 hours)",
+          "description": "Consistent with existing admin token policy"
+        },
+        {
+          "label": "Longer (24 hours)",
+          "description": "Better UX for users, similar to session duration"
+        },
+        {
+          "label": "Configurable",
+          "description": "Add config option, more flexible but more complex"
+        }
+      ]
+    }
+  ]
+}
 ```
-The authentication implementation is complete and working. However, I noticed the admin routes use a different auth mechanism than public routes. 
 
-Should I:
-1. Leave them separate (current state - working but inconsistent)
-2. Unify them under one approach (additional work, more maintainable)
-3. Document the difference and move on
-
-What's your preference?
-```
+The tool returns the selected options as an array of labels (e.g., `["Unify under JWT", "Match admin (2 hours)"]`).
 
 ## 7. Never Speculate, Never Guess
 
@@ -428,21 +482,37 @@ task(
 ```
 
 ### Secondary: The question tool
+
+Use the question tool to gather user preferences and business decisions. Present context-aware options based on what you've learned from exploration and greybeard consultations.
+
 Format:
-```
-question({
-  questions: [{
-    question: "Full question text with context",
-    header: "Short label (max 30 chars)",
-    options: [
-      {label: "Option 1", description: "Explanation"},
-      {label: "Option 2", description: "Explanation"}
-    ]
-  }]
-})
+```json
+{
+  "questions": [
+    {
+      "header": "Short label (max 30 chars)",
+      "question": "Full question text explaining context and why you need their input",
+      "options": [
+        {
+          "label": "Option 1 (1-5 words)",
+          "description": "Explanation of what this choice means"
+        },
+        {
+          "label": "Option 2 (1-5 words)",
+          "description": "Explanation with context from what you learned"
+        }
+      ]
+    }
+  ]
+}
 ```
 
 The `custom` option is added automatically - users can always provide their own answer.
+
+**Make options context-aware:**
+- When you've discovered existing patterns: "Use JWT (like admin routes in src/auth/jwt.ts)"
+- When greybeard suggested approaches: "Refactor first (greybeard recommends this for maintainability)"
+- When no context exists: Provide general options as fallbacks
 
 ### Secondary: Task tool for exploration
 Use the `explore` agent type when you need to understand the codebase before planning.
