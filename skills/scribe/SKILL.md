@@ -87,12 +87,17 @@ Use these learned signals alongside general heuristics. Project-specific vocabul
 
 If the categorization is clear, proceed to update the appropriate document.
 
-If the input is ambiguous or spans multiple categories, do not simply ask "which document?" Instead, interview the user to decompose the input into distinct claims that can each be routed precisely:
+If the input is ambiguous or spans multiple categories, do not simply ask "which document?" Instead, use the question tool to interview the user and decompose the input into distinct claims that can each be routed precisely:
 
 1. Explain what makes the input ambiguous — identify the product, architecture, and/or implementation aspects you see in it.
-2. Ask targeted questions to separate those aspects. For example:
-   - "When you say 'fast and reliable', is that a promise to users (product) or a system property you need to design for (architecture)?"
-   - "You mentioned [component] — is that a user-facing concept or an internal abstraction?"
+2. Use the question tool to ask targeted questions that separate those aspects. Based on the context you have from existing documents and the user's input, provide relevant options that help clarify the intent. For example:
+   - If the user mentions "fast and reliable", ask whether this is a user-facing promise (product) or a system property to design for (architecture), with options like:
+     - "User-facing promise (add to PRODUCT.md)"
+     - "System design requirement (add to ARCHITECTURE.md)"
+     - "Both - it's a promise AND a constraint"
+   - If the user mentions a component name, ask whether it's user-facing or internal, with options based on what you know about similar components in the existing docs:
+     - "[Component] is user-facing (like [similar component] in PRODUCT.md)"
+     - "[Component] is an internal abstraction (add to ARCHITECTURE.md)"
 3. Route each extracted piece to its appropriate document. A single user statement may result in updates to multiple documents.
 
 ### Step 3: Update Document
@@ -124,11 +129,17 @@ Read the other two documents and check whether the new content implies entries t
 - An implementation detail referencing a component not described in architecture
 - A product goal with no implementation approach mentioned
 
-If gaps are found, present them as a batch of 2-4 questions. For example:
+If gaps are found, use the question tool to present them as a batch of 2-4 questions. Based on the context from existing documents and the change just made, provide specific, relevant options. For example:
 
-> I updated ARCHITECTURE.md with the export service. I noticed:
-> 1. PRODUCT.md doesn't describe data export as a user-facing capability. Should it?
-> 2. IMPLEMENTATION.md has no entry for how exports are generated. Want to add that now?
+If you just added an export service to ARCHITECTURE.md, and PRODUCT.md has no mention of exports:
+
+> I updated ARCHITECTURE.md with the export service. I noticed some potential gaps in other documents.
+
+Use the question tool with:
+- Question 1: "Should PRODUCT.md describe data export as a user-facing capability?"
+  - Options based on similar features already in PRODUCT.md (e.g., if PRODUCT.md describes "reports" or "data access", offer "Add export as data access capability" or "Add as part of reporting feature")
+- Question 2: "How should IMPLEMENTATION.md describe export generation?"
+  - Options based on existing patterns in IMPLEMENTATION.md (e.g., if other services use specific libraries/technologies, offer "Similar to [existing service], using [library]" or "Different approach - specify details")
 
 For each question the user answers, update the corresponding document before proceeding.
 
@@ -142,12 +153,16 @@ Scan the updated document for weaknesses:
 - Missing failure modes, edge cases, or constraints
 - Decisions stated without rationale
 
-Present 2-4 probing questions as a batch. Focus on non-obvious gaps — things the user might not think to document unprompted. For example:
+Use the question tool to present 2-4 probing questions as a batch. Focus on non-obvious gaps — things the user might not think to document unprompted. Based on the content just added, questions already answered, and patterns from existing documentation, provide specific, contextual options. For example:
 
-> The export service section in ARCHITECTURE.md looks good. A few things that would strengthen it:
-> 1. What happens when an export fails mid-generation? Is there retry logic or does the user need to re-trigger?
-> 2. Are there size or rate limits on exports?
-> 3. Who has permission to trigger exports — any user, or only certain roles?
+If you just added an export service to ARCHITECTURE.md, use the question tool with questions like:
+
+- Question 1: "What happens when an export fails mid-generation?"
+  - Options based on patterns in the existing architecture (e.g., if other services have retry logic: "Automatic retry (like [existing service])", "User must re-trigger", "Saved as partial export for resume")
+- Question 2: "Are there size or rate limits on exports?"
+  - Options informed by existing constraints in the docs (e.g., "Same limits as [similar feature]", "10k rows / 100MB max", "No hard limits - best effort")
+- Question 3: "Who has permission to trigger exports?"
+  - Options based on existing auth patterns (e.g., if the docs mention role-based access: "Any authenticated user", "Only admin/owner roles", "Configurable per workspace")
 
 Update the document with any answers the user provides. If the user declines to answer, move on without pressing.
 
@@ -178,13 +193,19 @@ These examples demonstrate how classification and the active documentation steps
 **Input:** "Data export is fast and reliable"
 **Classification:** Ambiguous — has both product and architecture aspects.
 
-Instead of asking "which document?", interview to decompose:
+Instead of asking "which document?", use the question tool to decompose. After reading existing docs and seeing that PRODUCT.md already mentions "reports" as a user-facing feature and ARCHITECTURE.md discusses latency targets for other services:
 
-> "Data export is fast and reliable" touches a few layers. Let me ask a couple of questions:
-> 1. Is "fast and reliable" a promise you're making to users (product) or a design constraint the system must satisfy (architecture)?
-> 2. Does "fast" have a concrete target — like sub-5-second for a typical export?
+Use the question tool:
+- Question 1: "Is 'fast and reliable' a promise to users or a system design requirement?"
+  - Option 1: "User-facing promise (add to PRODUCT.md like other user benefits)"
+  - Option 2: "System design requirement (add to ARCHITECTURE.md with latency targets)"
+  - Option 3: "Both - it's a user promise AND a technical constraint"
+- Question 2: "Does 'fast' have a concrete target?"
+  - Option 1: "Yes - under 5 seconds (similar to report generation target)"
+  - Option 2: "Yes - but different target (specify)"
+  - Option 3: "No specific target yet"
 
-If the user answers: "It's a user-facing promise, and yes, under 5 seconds for up to 10k rows" — this produces two updates:
+If the user selects "Both" and "under 5 seconds", this produces two updates:
 - **PRODUCT.md:** Data export completes in under 5 seconds for typical datasets (up to 10k rows).
 - **ARCHITECTURE.md:** The export pipeline must meet a 5-second latency target for datasets up to 10k rows.
 
@@ -192,39 +213,66 @@ If the user answers: "It's a user-facing promise, and yes, under 5 seconds for u
 
 **Scenario:** User adds "The notification service delivers messages through email, SMS, and push" to ARCHITECTURE.md.
 
-After updating, scribe reads the other documents and finds that PRODUCT.md has no mention of notifications as a user-facing feature. It asks:
+After updating, scribe reads the other documents and finds that PRODUCT.md has no mention of notifications as a user-facing feature, but does mention "alerts" in a different context. IMPLEMENTATION.md describes other third-party integrations using specific provider names.
 
-> I added the notification service to ARCHITECTURE.md. I noticed:
-> 1. PRODUCT.md doesn't mention notifications as a user-facing capability. Should I add that users receive notifications via email, SMS, and push?
-> 2. IMPLEMENTATION.md doesn't specify which email/SMS/push providers are used. Want to capture those choices now?
+Use the question tool:
+- Question 1: "Should PRODUCT.md describe notifications as a user-facing capability?"
+  - Option 1: "Yes - add as new notifications feature (users receive updates via email/SMS/push)"
+  - Option 2: "Yes - integrate with existing 'alerts' feature (notifications are how alerts are delivered)"
+  - Option 3: "No - notifications are internal only, not user-facing"
+- Question 2: "Should IMPLEMENTATION.md specify the notification providers?"
+  - Option 1: "Yes - using [provider] (similar to how we document other integrations)"
+  - Option 2: "Yes - but different providers (specify which)"
+  - Option 3: "Not yet - still evaluating options"
 
 ### Gap Detection (Step 5)
 
 **Scenario:** User adds a new "Authentication" section to ARCHITECTURE.md describing token-based auth with refresh tokens.
 
-After updating, scribe scans the section and identifies gaps:
+After updating, scribe scans the section and identifies gaps. From reading ARCHITECTURE.md, scribe notices other sections mention security constraints and timeout values. IMPLEMENTATION.md describes storage mechanisms for other sensitive data.
 
-> The authentication section covers the core flow. A few things that would strengthen it:
-> 1. What happens when a refresh token is revoked — does the user get signed out immediately or at next request?
-> 2. Is there a maximum session duration regardless of refresh?
-> 3. How are tokens stored on the client side?
+Use the question tool:
+- Question 1: "What happens when a refresh token is revoked?"
+  - Option 1: "User signed out immediately (like session invalidation elsewhere in the system)"
+  - Option 2: "User signed out at next request (deferred enforcement)"
+  - Option 3: "Configurable per deployment"
+- Question 2: "Is there a maximum session duration?"
+  - Option 1: "Yes - 30 days (similar to other timeout values in the docs)"
+  - Option 2: "Yes - but different duration (specify)"
+  - Option 3: "No hard limit - refresh tokens last indefinitely until revoked"
+- Question 3: "How are tokens stored on the client side?"
+  - Option 1: "Same as [other sensitive data] - in secure storage"
+  - Option 2: "Different approach (specify storage mechanism)"
+  - Option 3: "Client implementation decision - not specified in architecture"
 
 ## Error Handling
 
 ### Document does not exist
 
-If the target document does not exist, ask the user if they want to create it:
+If the target document does not exist, use the question tool to ask the user if they want to create it, with context about what type of document it is:
 
-> [DOCUMENT].md does not exist. Would you like me to create it?
+Question: "The [DOCUMENT].md file does not exist. Should I create it?"
+Options:
+- "Yes, create [DOCUMENT].md (will contain [brief description based on document type])"
+- "No, use a different document instead"
 
 ### Content conflicts
 
-If the new content contradicts existing content, flag it:
+If the new content contradicts existing content, use the question tool to flag it with specific options:
 
-> This conflicts with existing content in [DOCUMENT].md: "[existing content]". Should I replace it or should we reconcile the difference?
+Question: "This conflicts with existing content in [DOCUMENT].md: '[existing content]'. How should I resolve this?"
+Options based on the nature of the conflict:
+- "Replace old content with new (new information supersedes old)"
+- "Keep both with clarification (they represent different aspects/contexts)"
+- "Merge the two (combine into comprehensive description)"
 
 ### Unclear scope
 
-If the input is too broad or vague to place in a specific document:
+If the input is too broad or vague to place in a specific document, use the question tool to narrow it down:
 
-> I'm not sure where this belongs. Can you provide more detail or specify which document (product, architecture, or implementation)?
+Question: "I'm not sure where '[user input]' belongs. Can you help me place it?"
+Options based on what aspects you can detect:
+- "PRODUCT.md ([specific user-facing aspect you detected])"
+- "ARCHITECTURE.md ([specific structural aspect you detected])"
+- "IMPLEMENTATION.md ([specific technical aspect you detected])"
+- "Multiple documents (it spans several concerns)"
