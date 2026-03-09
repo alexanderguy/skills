@@ -26,10 +26,39 @@ When `$ARGUMENTS` is a goal description:
 2. Break the goal into discrete tasks, each small enough for a single subagent
 3. Identify dependencies between tasks (DAG edges)
 4. Select the right agent type for each task:
-   - `general` for implementation (read + write + execute)
    - `explore` for research and analysis (read-only)
+   - `intern` for well-defined implementation tasks (clear requirements, straightforward changes, mechanical work)
+   - `general` for complex implementation requiring judgment (architectural decisions, open-ended problems, novel solutions)
 5. Detect project verification commands from package.json, Makefile, or similar
 6. Create the dispatch directory structure, manifest, and task files (Phase 2)
+
+### Agent Type Selection Guide
+
+#### Task Agent Types
+
+Use `intern` when:
+- The task has a detailed implementation plan with specific file changes
+- The approach is clear and mechanical (threading a parameter through a stack, updating all call sites, etc.)
+- Success criteria are unambiguous (tests pass, lint passes)
+- No architectural decisions are needed
+
+Use `general` when:
+- The task requires making technical trade-offs
+- The implementation approach is not fully specified
+- The task involves designing new abstractions or patterns
+- The scope may need adjustment based on what's discovered
+
+Use `explore` when:
+- The task is pure research (finding patterns, understanding structure)
+- No code changes are required
+- The output is findings for downstream tasks to consume
+
+#### Critique Agent Types
+
+Use `critique` (default):
+- Specialized code review focused on correctness, completeness, and adherence to requirements
+- Verifies objectives are met, checks constraints, and identifies issues without fixing them
+- This is the recommended agent type for all critique operations
 
 When `$ARGUMENTS` is a plan file:
 
@@ -129,7 +158,7 @@ verify:
 
 critique:
   enabled: true              # global default; tasks can override
-  agent: general             # must be general (needs to write critique.yaml); reserved for forward compatibility
+  agent: critique            # defaults to critique; must be an agent that can write critique.yaml
 
 commits:
   strategy: per-task         # per-task | single | grouped
@@ -150,7 +179,7 @@ tasks:
     status: pending          # pending | dispatched | completed | failed | fixing
     critique:                # optional per-task override
       enabled: true
-      agent: general
+      agent: critique        # defaults to critique
       prompt: |
         Custom critique instructions for this task.
     commit-group: ""         # optional; used with 'grouped' commit strategy
@@ -373,7 +402,7 @@ Collect results from all dispatched tasks:
 
 If critique is enabled for this task (via global config or per-task override), do not mark the task `completed` yet. Instead:
 
-1. Spawn a critique agent for the task. The critique agent receives:
+1. Spawn a critique agent for the task (using the `agent` type from the critique config, defaulting to `critique`). The critique agent receives:
    - The original `plan.md` (what was asked for)
    - The `output.yaml` (what the doer claims it did)
    - Access to read the actual file changes in the codebase
@@ -392,7 +421,7 @@ If critique is not enabled for the task, mark it `completed` immediately.
 
 For `explore` agents, critique works differently since there are no file changes to review. Instead, the critique agent verifies the explore agent's findings against the actual codebase:
 
-1. Spawn a critique agent (type `general`) that receives:
+1. Spawn a critique agent (using the `agent` type from the critique config, defaulting to `critique`) that receives:
    - The original `plan.md` (what was asked)
    - The `output.yaml` (the explore agent's findings, written by the orchestrator)
    - The repository root and task directory paths
@@ -418,7 +447,7 @@ notes: |
 
 Only `blocking` issues result in a `needs-work` verdict. Warnings and nits are recorded but do not block completion.
 
-The critique agent uses the `general` agent type because it needs to write `critique.yaml` to the task directory. The critique prompt instructs it only to review and report. If a critique agent modifies source files, treat this as a bug and discard those changes. To detect this, the orchestrator should snapshot modified files (via `git status` or equivalent) before dispatching the critique agent and revert any newly modified files outside the task directory afterward.
+The critique agent uses the `critique` agent type. The agent must be able to write `critique.yaml` to the task directory. The critique prompt instructs it only to review and report. If a critique agent modifies source files, treat this as a bug and discard those changes. To detect this, the orchestrator should snapshot modified files (via `git status` or equivalent) before dispatching the critique agent and revert any newly modified files outside the task directory afterward.
 
 #### Default critique prompt
 
