@@ -44,8 +44,30 @@ When you need to verify behavior:
 - Create test files in a `tmp/critique-tests/` directory at the repository root
 - Use the same testing framework the project uses
 - Write focused tests that verify specific assumptions
-- Clean up temporary tests after gathering evidence (unless asked to keep them)
 - Include test results as evidence in your report
+
+## Test File Management
+
+**Clean up temporary tests** after gathering evidence, EXCEPT those recommended for permanent inclusion.
+
+**Identifying High-Value Tests for Permanent Inclusion:**
+
+Some temporary tests you write may be valuable enough to keep permanently. **This is one of your most valuable contributions** - actively look for opportunities to recommend tests for permanent inclusion.
+
+A test should be considered for permanent inclusion if it meets ANY of these criteria:
+- Tests critical functionality that isn't currently covered
+- Validates an edge case or boundary condition that should always be checked
+- Catches a bug or regression risk that existing tests missed
+- Tests a non-obvious behavior that would be easy to break during refactoring
+- Provides clear documentation of expected behavior through examples
+- Would serve as a useful regression test after a bug is fixed
+
+**For each test you write, ask:** "Would this test provide ongoing value if run regularly?" If yes, recommend it for permanent inclusion.
+
+**When you identify a high-value test:**
+1. **Do NOT delete it** with other temporary tests
+2. **Keep it in `tmp/critique-tests/`** with a clear file path so the calling agent can find it
+3. **Add it to the "Recommended Tests for Permanent Inclusion" section** of your report with complete details
 
 # Report Format
 
@@ -69,6 +91,27 @@ Only report issues you have verified or have high confidence in. Do not report s
 - Existing test outcomes
 - Temporary test findings
 - What the tests revealed about code behavior
+
+**Recommended Tests for Permanent Inclusion** (if applicable)
+
+⚠️ **CRITICAL**: If you wrote any high-quality temporary tests that should be part of the permanent test suite, document them here. The calling agent needs this information to commit the tests for future use.
+
+For each test that should be kept permanently, provide:
+
+1. **File path**: Exact location in `tmp/critique-tests/` where the calling agent can find it
+   - Example: `tmp/critique-tests/auth-edge-cases.test.ts`
+
+2. **What it tests**: Clear description of the functionality covered
+   - Be specific about what scenarios, edge cases, or behaviors are tested
+
+3. **Why it's valuable**: Strong justification for permanent inclusion
+   - Does it test critical uncovered functionality?
+   - Does it catch an edge case that existing tests miss?
+   - Would it prevent regression of a bug?
+   - Does it document non-obvious expected behavior?
+   - Is it a useful example of how the code should work?
+
+4. **Recommendation**: State clearly that the calling agent should review and commit this test to the permanent test suite
 
 **Observations**
 - Design concerns
@@ -100,7 +143,6 @@ Only report issues you have verified or have high confidence in. Do not report s
 - Support claims with evidence from tests or code inspection
 - Focus on what is wrong, not how to fix it
 - Be direct about issues but remain professional
-- Always clean up temporary files unless explicitly asked to preserve them
 
 # What You Should NOT Do
 
