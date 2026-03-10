@@ -318,13 +318,97 @@ If you need to explore the codebase to understand structure, do it now (use Task
 
 ## Phase 2: Plan with Dispatch
 
-Once you understand the goal, load the dispatch skill and create a plan:
+Once you understand the goal, load the dispatch skill and create a plan.
+
+### Step 1: Extract Quality Gates (BEFORE Planning)
+
+Before creating any tasks, re-read the loaded skills and extract quality requirements:
+
+1. **From `style` skill:**
+   - Tasks that produce code must verify compilation before completion
+   - Tasks that write tests must verify tests pass before completion
+   - Never work around failing builds
+
+2. **From `philosophy` skill:**
+   - Tests are first-class verification (not optional)
+   - Commits should enable debugging (isolate failures)
+
+3. **From AGENTS.md:**
+   - Avoid plans requiring "debugging 15 tasks at once"
+   - Fix at the right layer (don't create symptom-chasing scenarios)
+   - Multiple fixes to same subsystem = wrong approach
+
+4. **From project-specific docs** (if present):
+   - Check CONVENTIONS.md, DEV.md, README for project requirements
+
+Create a checklist of requirements specific to this plan.
+
+### Step 2: Create the Plan
 
 1. Break the goal into independent tasks
 2. Identify real dependencies (not safety dependencies)
 3. Assign appropriate agent types (general for implementation, explore for research)
 4. Define verification commands
-5. Present the plan to the user for approval
+5. **Add per-task verification:**
+   - Tasks producing C/Rust/compiled code: add build command
+   - Tasks writing tests: add test command to verify tests pass
+   - Tasks modifying critical paths: add relevant test subset
+6. **Choose commit strategy:**
+   - Use `per-task` for debuggability (default - enables bisection, isolates failures)
+   - Use `grouped` only when history cleanliness matters AND verification is comprehensive
+   - When in doubt, use `per-task`
+
+### Step 3: Verify Against Quality Gates
+
+Before presenting to the user, verify the plan against your quality gates checklist:
+
+```markdown
+## Quality Gate Verification
+
+From `style` skill:
+✅/❌ All code-producing tasks have build verification
+✅/❌ All test-writing tasks verify tests pass
+✅/❌ No workarounds for failing builds
+
+From `philosophy` skill:
+✅/❌ Tests treated as first-class verification
+✅/❌ Commit strategy enables debugging
+
+From AGENTS.md:
+✅/❌ If Phase 5 fails, can isolate which task caused it
+✅/❌ Plan doesn't create multi-task debugging scenarios
+
+Gaps addressed:
+- [List any issues found and how you fixed them]
+```
+
+### Step 4: Present to User
+
+**Present quality gate verification FIRST**, then the full plan.
+
+Example:
+```
+I've created a dispatch plan for [goal]. Before presenting it, here's my quality gate verification:
+
+## Quality Gate Verification
+
+From `style` skill:
+✅ All code tasks have build verification
+✅ All test tasks verify tests pass
+
+From `philosophy` skill:
+✅ Per-task commits enable debugging
+✅ Tests run as part of each task
+
+From AGENTS.md:
+✅ Per-task commits allow bisection to isolate failures
+
+Gaps addressed:
+- Changed commit strategy from grouped to per-task for debuggability
+- Added `make test` verification to tasks 3a, 5a, 5b
+
+[Then present the full dispatch plan]
+```
 
 If the plan has structural issues (circular dependencies, missing tasks, unclear objectives), fix them before presenting. If you're unsure how to structure the plan, consult greybeard for technical guidance.
 

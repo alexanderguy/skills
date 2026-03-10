@@ -23,14 +23,30 @@ Before doing anything else:
 When `$ARGUMENTS` is a goal description:
 
 1. Use `explore` agents to understand the codebase and scope of work
-2. Break the goal into discrete tasks, each small enough for a single subagent
-3. Identify dependencies between tasks (DAG edges)
-4. Select the right agent type for each task:
+2. **Extract quality gates from loaded skills:**
+   - From `style`: Per-task build verification, per-task test verification for test tasks, never work around failing builds
+   - From `philosophy`: Tests as first-class verification, commits that enable debugging
+   - From project-specific docs (CONVENTIONS.md, DEV.md, etc.): Project requirements
+   - Create a checklist of requirements for this specific plan
+3. Break the goal into discrete tasks, each small enough for a single subagent
+4. Identify dependencies between tasks (DAG edges)
+5. Select the right agent type for each task:
    - `explore` for research and analysis (read-only)
    - `intern` for well-defined implementation tasks (clear requirements, straightforward changes, mechanical work)
    - `general` for complex implementation requiring judgment (architectural decisions, open-ended problems, novel solutions)
-5. Detect project verification commands from package.json, Makefile, or similar
-6. Create the dispatch directory structure, manifest, and task files (Phase 2)
+6. Detect project verification commands from package.json, Makefile, or similar
+7. **Add per-task verification to task plans:**
+   - Tasks that produce compiled code (C, Rust, TypeScript, etc.): add build command to verify compilation
+   - Tasks that write tests: add test command to verify the tests actually pass
+   - Tasks that modify critical paths: add relevant subset of test suite
+   - This catches failures early, at the task level, rather than discovering 15 broken tasks at Phase 5
+8. **Choose commit strategy:**
+   - Use `per-task` when debuggability is critical (enables bisection, isolates failures) - **this is the default**
+   - Use `grouped` only when history cleanliness matters AND comprehensive Phase 5 verification will catch all issues
+   - Grouped commits make debugging harder: if Phase 5 fails, you can't tell which of 5 bundled tasks broke it
+9. **Verify plan against quality gates checklist** - ensure requirements from loaded skills are satisfied
+10. **Present quality gate verification to user** before presenting the full plan (see template below)
+11. Create the dispatch directory structure, manifest, and task files (Phase 2)
 
 ### Agent Type Selection Guide
 
@@ -60,12 +76,55 @@ Use `critique` (default):
 - Verifies objectives are met, checks constraints, and identifies issues without fixing them
 - This is the recommended agent type for all critique operations
 
+### Quality Gates Verification Template
+
+Before presenting any dispatch plan to the user, verify it against the loaded skills and present this checklist:
+
+```markdown
+## Quality Gate Verification
+
+From `style` skill:
+[ ] All code-producing tasks have build verification
+[ ] All test-writing tasks verify tests pass
+[ ] No workarounds for failing builds
+
+From `philosophy` skill:
+[ ] Tests treated as first-class verification
+[ ] Commit strategy enables debugging
+
+From AGENTS.md:
+[ ] If Phase 5 fails, can isolate which task caused it
+[ ] Plan doesn't require debugging multiple tasks simultaneously
+[ ] Fixes happen at the right layer (not symptom-chasing)
+
+From project-specific docs:
+[ ] [Project-specific requirements if any]
+
+Status:
+✅ [Requirement met]: [evidence from plan]
+✅ [Requirement met]: [evidence from plan]
+❌ [Gap found]: [how you addressed it]
+
+Commit strategy rationale:
+[Explain why per-task vs grouped, referencing debuggability vs history cleanliness]
+```
+
+Present this verification to the user BEFORE presenting the full dispatch plan. This ensures quality requirements are addressed proactively, not discovered during execution.
+
+**Why this matters:**
+
+Late failure detection is expensive. If 15 tasks complete and Phase 5 verification fails, you must debug all 15 tasks to find the culprit. Grouped commits hide boundaries, making bisection impossible.
+
+Early failure detection is cheap. If task 3a writes tests and immediately runs them, you know task 3a is broken and fix it in isolation.
+
+The quality gates prevent the expensive scenario.
+
 When `$ARGUMENTS` is a plan file:
 
 1. Read the plan and extract tasks, dependencies, and verification steps
 2. Create the dispatch directory structure from the plan
 
-Regardless of input type, present the plan to the user for approval before executing. Present a summary of all tasks, their dependencies, agent types, and the verification commands. The user may approve as-is, request modifications (add/remove/reorder tasks, change dependencies), or abort.
+Regardless of input type, present the plan to the user for approval before executing. Present the quality gate verification first, then a summary of all tasks, their dependencies, agent types, and the verification commands. The user may approve as-is, request modifications (add/remove/reorder tasks, change dependencies), or abort.
 
 ## Phase 2: Directory Structure
 
