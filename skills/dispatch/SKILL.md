@@ -449,7 +449,7 @@ Dispatch all tasks in the batch as parallel Task tool calls in a single message.
 Collect results from all dispatched tasks:
 
 1. **Check `output.yaml`** (source of truth):
-   - Exists with `status: completed`: proceed to critique check (Step 3a)
+   - Exists with `status: completed`: proceed to build verification (Step 3a)
    - Exists with `status: failed`: mark task `failed` in manifest
    - Does not exist: mark task `failed` (contract violation)
 
@@ -457,7 +457,39 @@ Collect results from all dispatched tasks:
    - Use for diagnostic context if the task failed
    - Sanity check against `output.yaml` -- if they conflict, log a warning and trust `output.yaml`
 
-### Step 3a: Critique (if enabled)
+### Step 3a: Build Verification (Before Critique)
+
+Before running critique (which is expensive), verify the code actually builds and passes project quality gates:
+
+1. **Run task-specified verification:**
+   - If the task's `plan.md` specified verification commands (e.g., `make build`, `make test`), run them
+   - These are typically in a "## Verification" section of the plan
+
+2. **Run project-level lint:**
+   - Always run the project's lint command (e.g., `make lint`)
+   - Lint failures break the build gate and must be fixed
+
+3. **Evaluate results:**
+   - If all verification passes: proceed to Step 3b (Critique)
+   - If any verification fails: mark task as `fixing`, create a fix task for the verification failure, skip critique
+   
+**Why this order matters:**
+
+Build verification is cheap and deterministic - it either passes or fails quickly. Critique agents are expensive (run complex code analysis, potentially slow). Running build verification first means:
+
+- Save time: Don't waste effort critiquing code that doesn't even compile or lint
+- Faster feedback: Developers get immediate "code doesn't build" feedback
+- Better critique: Critique agents review working code, not broken code
+
+**Severity classification:**
+- Lint errors → blocking (breaks build gate)
+- Build errors → blocking (code doesn't compile)  
+- Test failures → blocking (broken functionality)
+- Lint warnings → warning (non-blocking, but should be addressed)
+
+If build verification fails, create a fix task immediately. Don't run critique on broken code.
+
+### Step 3b: Critique (if enabled)
 
 If critique is enabled for this task (via global config or per-task override), do not mark the task `completed` yet. Instead:
 
@@ -526,10 +558,20 @@ Evaluate whether:
 - No unintended side effects were introduced
 - Constraints from the plan were respected
 
+Important: Issues that break the build gate must be marked as blocking:
+- Lint errors (ESLint, Prettier violations)
+- Type errors
+- Build failures
+- Test failures
+
 Write critique.yaml to your task directory with your verdict
 (accepted | needs-work) and a list of specific issues with severity
 (blocking | warning | nit).
 Only blocking issues should result in a needs-work verdict.
+
+Note: Build verification runs BEFORE critique. If the code doesn't
+compile or has lint errors, the task is already marked as fixing.
+You're reviewing code that builds successfully.
 ```
 
 #### Default explore critique prompt
@@ -559,9 +601,9 @@ Only blocking issues should result in a needs-work verdict.
 A finding that downstream tasks will rely on being wrong is blocking.
 ```
 
-### Step 3b: Fix task resolution
+### Step 3c: Fix task resolution
 
-After processing all tasks in the batch (including critique), check every newly completed task: if it has a `fixes` field, transition each referenced original task's status from `fixing` to `completed` in the manifest. When `fixes` is a list, transition all referenced originals. Only apply this transition when the original task's current status is `fixing`.
+After processing all tasks in the batch (including build verification and critique), check every newly completed task: if it has a `fixes` field, transition each referenced original task's status from `fixing` to `completed` in the manifest. When `fixes` is a list, transition all referenced originals. Only apply this transition when the original task's current status is `fixing`.
 
 This is what unblocks downstream tasks. Downstream tasks `depends-on` the original task ID, not the fix task. When the original transitions to `completed`, downstream tasks enter the ready set in the next iteration of Step 1.
 
