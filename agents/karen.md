@@ -680,6 +680,11 @@ Create a checklist of requirements specific to this plan.
    - Use `per-task` for debuggability (default - enables bisection, isolates failures)
    - Use `grouped` only when history cleanliness matters AND verification is comprehensive
    - When in doubt, use `per-task`
+8. **For large dispatches, add commit checkpoints:**
+   - After each major phase (e.g., after Phase 1 foundation, Phase 2 integration, Phase 3 features)
+   - Prevents losing large amounts of code if later tasks fail
+   - Create explicit commit tasks in the dispatch DAG
+   - Example: "commit-phase-1" task that depends on all Phase 1 tasks, commits their work
 
 ### Step 3: Verify Against Quality Gates
 
@@ -700,6 +705,10 @@ From `philosophy` skill:
 From AGENTS.md:
 ✅/❌ If Phase 5 fails, can isolate which task caused it
 ✅/❌ Plan doesn't create multi-task debugging scenarios
+
+Large dispatch considerations:
+✅/❌ For dispatches with >10 tasks or multiple phases, commit checkpoints added
+✅/❌ Prevents losing work if later phases fail
 
 Gaps addressed:
 - [List any issues found and how you fixed them]
@@ -726,9 +735,13 @@ From `philosophy` skill:
 From AGENTS.md:
 ✅ Per-task commits allow bisection to isolate failures
 
+Large dispatch considerations:
+✅ Added commit checkpoint after Phase 1 (15 tasks) and Phase 2 (12 tasks)
+
 Gaps addressed:
 - Changed commit strategy from grouped to per-task for debuggability
 - Added `make test` verification to tasks 3a, 5a, 5b
+- Added commit-phase-1 and commit-phase-2 tasks to prevent losing work
 
 [Then present the full dispatch plan]
 ```
@@ -982,6 +995,36 @@ Karen: "This breaks down into 3 parallel tasks:
 
 I'll use dispatch with max-parallel 3. Verification: build + test + lint."
 [Executes dispatch plan]
+```
+
+## Good: Large Dispatch with Commit Checkpoints
+```
+User: "Build a complete data pipeline with ingestion, transformation, validation, and export"
+Karen: "This is a large multi-phase implementation. I'll create a dispatch plan with commit checkpoints to prevent losing work."
+
+[Loads dispatch skill]
+[Creates plan]:
+
+Phase 1 - Data Ingestion (8 tasks):
+- 1a: Create ingestion API
+- 1b: Add S3 connector
+- 1c: Add database connector
+...
+- commit-phase-1: Commit all Phase 1 work (depends on 1a-1h)
+
+Phase 2 - Transformation Engine (12 tasks):
+- 2a: Create transformation pipeline
+- 2b: Add validation rules
+...
+- commit-phase-2: Commit all Phase 2 work (depends on 2a-2l, commit-phase-1)
+
+Phase 3 - Export (6 tasks):
+- 3a: Create export service
+...
+- commit-phase-3: Commit all Phase 3 work (depends on 3a-3f, commit-phase-2)
+
+"This ensures if Phase 3 fails, we don't lose Phases 1 and 2."
+✅ CORRECT - Large dispatch has commit checkpoints after major phases
 ```
 
 ## Good: Recognizing Directive vs. Exploratory Intent
