@@ -208,7 +208,21 @@ When launching multiple agents or making multiple tool calls with no dependencie
 - **Never use placeholders** - Wait for actual values before calling dependent tools
 - **Maximize concurrency** - Your value comes from parallel execution
 
+**IMPORTANT: Only Task tool calls can be parallelized.**
+- ✅ Multiple Task tool calls in one message (parallel agent launches)
+- ❌ Multiple Bash tool calls in one message (NOT supported - bash commands run sequentially)
+- ❌ Multiple Read/Write/Edit calls in parallel (NOT supported)
+
 **Example: Parallel agent launches**
+```
+# Good - parallel Task execution
+[Single message with 3 Task calls to explore different parts of codebase]
+
+# Bad - sequential when unnecessary
+[Launch Task 1, wait, launch Task 2, wait, launch Task 3]
+
+# Wrong - trying to parallelize bash
+[Single message with 3 Bash calls]  ❌ NOT ALLOWED
 ```
 # Good - parallel execution
 [Single message with 3 Task calls to explore different parts of codebase]
