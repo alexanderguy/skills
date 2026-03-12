@@ -252,6 +252,11 @@ results:                       # populated by Phase 6; empty until then
 
 unexpected-modifications: ask  # ask | accept
 
+deviation-handling:
+  threshold: moderate         # escalate at this severity and above (minor | moderate | major)
+  auto-fix: true              # Karen can create fix tasks below threshold
+  escalate-to: user           # user | greybeard (who to consult for threshold+ deviations)
+
 tasks:
   - id: 1a-extract_auth_module
     agent: general           # general | explore
@@ -380,6 +385,38 @@ Before marking this task complete, you MUST:
 
 Do NOT claim completion without running verification and capturing evidence.
 
+## Deviation Reporting
+
+**CRITICAL:** You MUST report ANY deviation from this plan, even minor ones.
+
+**Deviations to report:**
+- Modified files NOT listed in "Files to Modify"
+- Changed implementation approach from what was described
+- Scope changes (did more or less than planned)
+- Broke constraints (touched forbidden files, violated patterns)
+- Changed verification approach
+- Any other way you deviated from the plan
+
+**How to report:**
+Add `deviations` field to output.yaml:
+
+```yaml
+deviations:
+  - type: files_not_in_plan | approach_changed | scope_changed | constraint_violation | verification_changed
+    description: "Exactly what deviated from the plan and why"
+    severity: minor | moderate | major
+    justification: "Why the deviation was necessary or beneficial"
+```
+
+**Severity levels:**
+- **minor:** Cosmetic changes, logging improvements, documentation fixes, typo corrections
+- **moderate:** Different file than planned, slightly different approach, minor scope change
+- **major:** Architecture change, violated constraints, significant scope change
+
+**If NO deviations:** Include `deviations: []` to confirm you followed the plan exactly.
+
+**Consequence:** If deviations are detected in Step 4 that you didn't report here, your task will be marked FAILED for dishonesty.
+
 ## Upstream Context
 
 (This section is empty in the plan file on disk. At dispatch time, the
@@ -400,6 +437,11 @@ Required fields:
   - `level`: automated | manual | review
   - `evidence-files`: list of evidence files in task directory (e.g., [`verification.log`, `test-results.json`])
   - `result`: brief summary (e.g., "all 42 tests passed", "server responded with 200")
+- `deviations`: list of deviations from plan (empty list `[]` if none)
+  - `type`: files_not_in_plan | approach_changed | scope_changed | constraint_violation | verification_changed
+  - `description`: what deviated from the plan
+  - `severity`: minor | moderate | major
+  - `justification`: why the deviation was necessary
 - `exports`: structured data downstream tasks may need (object, can be empty)
 - `notes`: free-text context for the orchestrator and downstream tasks
 - `error`: if status is failed, describe what went wrong; omit or leave empty when status is completed
@@ -416,6 +458,11 @@ Example:
         - verification.log
         - test-results.json
       result: "all tests passed (15/15), build successful"
+    deviations:
+      - type: files_not_in_plan
+        description: "Also modified src/utils/validation.ts to add shared validation helper"
+        severity: minor
+        justification: "Both routes needed the same email validation logic, extracted to avoid duplication"
     exports:
       handler-pattern: defineHandler
       breaking-changes: false
@@ -428,7 +475,18 @@ This file is the source of truth for task completion. If it does not exist
 when you finish, the orchestrator will treat your task as failed.
 
 (For explore agents: the orchestrator writes output.yaml on your behalf.
-Return your findings in the Task tool return message instead.)
+Return your findings in the Task tool return message instead.
+
+**Explore agent deviation reporting:**
+If you examined files not listed in the plan, include in your return:
+```
+deviations:
+  - type: files_examined_not_in_plan
+    description: "Examined src/utils/helpers.ts for context"
+    severity: minor
+    justification: "Found reference to helper functions that affect the routing logic"
+```
+Or `deviations: []` if you only examined planned files.)
 ```
 
 ## Phase 3: Plan Validation
@@ -532,7 +590,21 @@ For each task:
 4. Update the task's status to `dispatched` in `dispatch.yaml`
 5. Dispatch via the Task tool using the `agent` type from the manifest
 
-For `explore` agents (read-only): the orchestrator reads the Task tool return message as the task's output and writes `output.yaml` on the agent's behalf, since explore agents cannot write files. The orchestrator writes `status: completed`, `files-modified: []`, the Task tool return message as `notes`, and any structured data extracted from the return as `exports` (empty object if none). If the explore agent's return indicates failure, set `status: failed` and populate `error`.
+For `explore` agents (read-only): the orchestrator reads the Task tool return message as the task's output and writes `output.yaml` on the agent's behalf, since explore agents cannot write files.
+
+**What the orchestrator writes for explore agents:**
+- `status`: completed | failed
+- `files-modified`: [] (explore agents are read-only)
+- `notes`: Task tool return message
+- `exports`: any structured data extracted from the return (empty object if none)
+- `deviations`: extracted from the return message if present (empty list if none)
+
+**Extracting deviations:**
+- Parse the return message for a `deviations:` section
+- If found: extract and include in output.yaml
+- If not found: write `deviations: []`
+
+If the explore agent's return indicates failure, set `status: failed` and populate `error`.
 
 Dispatch all tasks in the batch as parallel Task tool calls in a single message.
 
@@ -548,6 +620,17 @@ Collect results from all dispatched tasks:
 2. **Read the Task tool return message** (advisory):
    - Use for diagnostic context if the task failed
    - Sanity check against `output.yaml` -- if they conflict, log a warning and trust `output.yaml`
+
+3. **Process deviations**:
+   - Check `deviations` field exists in output.yaml (missing = task FAILED)
+   - For each deviation in the list:
+     * If severity >= configured threshold: escalate to user immediately
+     * If severity < threshold: Karen evaluates and decides:
+       - Accept deviation and continue
+       - Create fix task to address deviation
+       - Consult greybeard if technical judgment needed
+   - Karen has authority to handle minor/moderate deviations autonomously
+   - Major deviations or uncertainty → escalate to user
 
 ### Step 3a: Check Task Self-Report
 
@@ -677,6 +760,7 @@ Check whether:
 - Patterns described (e.g., "all routes use X middleware") are accurate
 - Important files or patterns were not missed
 - The conclusions follow from the evidence in the codebase
+- **Files examined match plan:** Check deviations field in output.yaml. If agent examined files not in plan, verify the deviation is reasonable for research purposes.
 
 Write critique.yaml to your task directory with your verdict
 (accepted | needs-work) and a list of specific issues with severity
@@ -693,17 +777,30 @@ This is what unblocks downstream tasks. Downstream tasks `depends-on` the origin
 
 Note: if a fix task itself is rejected by critique, the fix task transitions to `fixing` and a new fix task is created (e.g., `1a-fix2`) with `fixes` pointing to the same original task (not to the previous fix task). The rejected intermediate fix task (`1a-fix1`) stays at `fixing` permanently -- this is expected and cosmetic, since nothing references it in a `fixes` field. Only the original task's status matters for unblocking downstream dependents.
 
-### Step 4: Unexpected modification detection
+### Step 4: Unexpected modification detection (Safety Net)
+
+**Purpose:** Catch deviations that tasks failed to report in Step 3. This is a safety net for dishonesty or oversight.
 
 If `unexpected-modifications` is set to `accept` in the manifest, skip this step.
 
 After each batch completes, compare each task's actual `files-modified` (from `output.yaml`) against the files listed in its `plan.md` under "Files to Modify". This comparison is best-effort since `plan.md` uses free-form markdown; extract file paths from backtick-quoted segments in the list items. For fix tasks (whose `plan.md` may not have a formal "Files to Modify" section), compare against the original task's planned files and any files mentioned in the error output that triggered the fix:
 
-1. If a subagent modified files not listed in its plan, flag this to the user as unexpected
-2. Ask the user whether to accept the extra changes or revert them (the orchestrator reverts unexpected files directly using `git checkout -- <file>`, no subagent needed)
-3. If multiple tasks in the same batch unexpectedly modified the same file, treat this as a conflict and ask the user how to proceed
+1. **Check if deviation was reported:**
+   - If files were modified outside plan AND deviation was reported in Step 3: Already handled, no action needed
+   - If files were modified outside plan AND deviation NOT reported: Task FAILED for dishonesty
 
-This step blocks the pipeline until the user responds. This is intentional -- unexpected modifications are a signal that the plan may be incomplete. Note that the user may be asked about the same pattern across multiple batches. If this becomes disruptive, the user can set `unexpected-modifications: accept` in the manifest.
+2. **Handle unreported modifications:**
+   - Mark task as `failed` (not `fixing` - this is a trust violation)
+   - Error message: "Task modified [files] without reporting deviation in output.yaml. Plan specified: [planned files]"
+   - Do NOT create fix task - require task to be re-run with proper deviation reporting
+
+3. **Multiple tasks modifying same file:**
+   - If both tasks reported the deviation in Step 3: Acceptable coordination issue
+   - If either task didn't report: Both tasks FAILED
+
+**Why this is strict:** Tasks are required to self-report deviations. Not reporting is a contract violation, not an implementation error. This step ensures accountability.
+
+**Note:** The user may be asked about the same pattern across multiple batches. If this becomes disruptive, the user can set `unexpected-modifications: accept` in the manifest (not recommended for production use).
 
 ### Step 5: Update and repeat
 
