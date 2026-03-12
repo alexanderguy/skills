@@ -22,6 +22,13 @@ Before doing anything else:
 
 When `$ARGUMENTS` is a goal description:
 
+0. **Validate requirements completeness:**
+   - Confirm the goal is sufficiently specified to create implementable tasks
+   - Verify you have: clear objective, functional requirements, constraints, edge cases
+   - **If requirements are vague, incomplete, or contradictory: STOP and return to caller**
+   - Do not proceed with task breakdown until requirements are actionable and complete
+   - When in doubt, ask: "Can an implementation agent succeed with only this information?"
+
 1. Use `explore` agents to understand the codebase and scope of work
 2. **Extract quality gates from loaded skills:**
    - From `style`: Per-task build verification, per-task test verification for test tasks, never work around failing builds
@@ -304,6 +311,14 @@ agent: general
 
 What the subagent should accomplish.
 
+## Requirements Covered
+
+Link to specific requirements this task implements (from spec file or user request):
+- Requirement 1: Brief description
+- Requirement 2: Brief description
+
+This ensures traceability and verifies all requirements are addressed by the plan.
+
 ## Context
 
 Relevant codebase context, file locations, patterns to follow.
@@ -380,6 +395,10 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 - Each task's `plan.md` has a clear, specific objective (not vague or underspecified)
 - Tasks that modify files specify which files they will touch
 - The union of all tasks' work plausibly covers the stated goal -- look for obvious gaps
+- **Requirements coverage**: Every requirement from the spec (or user request) is addressed by at least one task
+  - Check the "Requirements Covered" section in each task's `plan.md`
+  - Verify no requirements are orphaned (no task covers them)
+  - Verify no tasks are orphaned (don't cover any requirement)
 - Verification commands in the manifest actually exist in the project
 
 ### Coherence
