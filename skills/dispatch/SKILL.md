@@ -29,6 +29,13 @@ When `$ARGUMENTS` is a goal description:
    - Do not proceed with task breakdown until requirements are actionable and complete
    - When in doubt, ask: "Can an implementation agent succeed with only this information?"
 
+0b. **Capture baseline build state:**
+   - Before creating any tasks, run a full build to establish baseline
+   - Consult project build documentation (README.md, CONTRIBUTING.md, Makefile, package.json scripts, etc.) to determine build commands
+   - Full build typically includes: generate (if applicable) → lint → build → test
+   - Save output to `dispatch/<run-name>/baseline-build.log`
+   - This baseline will be compared in Phase 5 to detect regressions
+
 1. Use `explore` agents to understand the codebase and scope of work
 2. **Extract quality gates from loaded skills:**
    - From `style`: Per-task build verification, per-task test verification for test tasks, never work around failing builds
@@ -51,9 +58,17 @@ When `$ARGUMENTS` is a goal description:
    - Use `per-task` when debuggability is critical (enables bisection, isolates failures) - **this is the default**
    - Use `grouped` only when history cleanliness matters AND comprehensive Phase 5 verification will catch all issues
    - Grouped commits make debugging harder: if Phase 5 fails, you can't tell which of 5 bundled tasks broke it
-9. **Verify plan against quality gates checklist** - ensure requirements from loaded skills are satisfied
-10. **Present quality gate verification to user** before presenting the full plan (see template below)
-11. Create the dispatch directory structure, manifest, and task files (Phase 2)
+9. **Decide which tasks need critique:**
+   - Complex tasks (general agent, complicated objectives) → critique enabled
+   - Medium complexity intern tasks → critique enabled
+   - Simple intern tasks → critique disabled (trust self-report)
+   - When unsure, consult greybeard about complexity
+   - Mark in manifest with `critique.enabled: true/false` per task
+10. **Verify plan against quality gates checklist** - ensure requirements from loaded skills are satisfied
+11. **Present quality gate verification to user** before presenting the full plan (see template below)
+    - Include which tasks will be critiqued
+    - User can request additional tasks be critiqued if they see something missed
+12. Create the dispatch directory structure, manifest, and task files (Phase 2)
 
 ### Agent Type Selection Guide
 
@@ -333,6 +348,38 @@ Relevant codebase context, file locations, patterns to follow.
 - Files it must NOT touch
 - Patterns it must adhere to
 
+## Verification
+
+How you will demonstrate this task is complete and correct:
+
+**Level:** [automated | manual | review]
+
+**Automated:** (for functional changes with testable outcomes)
+- Commands: List commands you will run (refer to project build docs for correct commands)
+- Expected: What success looks like (e.g., "all tests pass", "builds without errors")
+- Evidence: Full command output will be captured to `verification.log`
+
+**Manual:** (for changes requiring demonstration)
+- Steps: How you will verify it works (describe the manual process)
+- Evidence: Command output, logs, or observations captured to `manual-evidence.log`
+- Why manual: Explain why automated verification isn't applicable
+
+**Review:** (for structural changes - refactors, moves, renames)
+- Compile check: Command to verify no syntax errors (from project build docs)
+- Lint check: Project lint command (from project build docs)
+- Unit tests: Run tests for modified files if they exist (from project build docs)
+- Evidence: Output captured to `verification.log`
+- Notes: What changed and why review level was chosen
+
+**Evidence Requirements:**
+
+Before marking this task complete, you MUST:
+1. Execute the verification steps defined above
+2. Capture full output to evidence files in your task directory
+3. Write summary to output.yaml with references to evidence files
+
+Do NOT claim completion without running verification and capturing evidence.
+
 ## Upstream Context
 
 (This section is empty in the plan file on disk. At dispatch time, the
@@ -349,6 +396,10 @@ Required fields:
 
 - `status`: completed | failed
 - `files-modified`: list of files you changed (paths relative to repo root)
+- `verification-summary`:
+  - `level`: automated | manual | review
+  - `evidence-files`: list of evidence files in task directory (e.g., [`verification.log`, `test-results.json`])
+  - `result`: brief summary (e.g., "all 42 tests passed", "server responded with 200")
 - `exports`: structured data downstream tasks may need (object, can be empty)
 - `notes`: free-text context for the orchestrator and downstream tasks
 - `error`: if status is failed, describe what went wrong; omit or leave empty when status is completed
@@ -359,12 +410,19 @@ Example:
     files-modified:
       - src/routes/users/list.ts
       - src/routes/users/create.ts
+    verification-summary:
+      level: automated
+      evidence-files:
+        - verification.log
+        - test-results.json
+      result: "all tests passed (15/15), build successful"
     exports:
       handler-pattern: defineHandler
       breaking-changes: false
     notes: |
       Migrated both routes. The create route had a custom error
       handler that was refactored into the middleware chain.
+      See verification.log for full test output.
 
 This file is the source of truth for task completion. If it does not exist
 when you finish, the orchestrator will treat your task as failed.
@@ -491,37 +549,25 @@ Collect results from all dispatched tasks:
    - Use for diagnostic context if the task failed
    - Sanity check against `output.yaml` -- if they conflict, log a warning and trust `output.yaml`
 
-### Step 3a: Build Verification (Before Critique)
+### Step 3a: Check Task Self-Report
 
-Before running critique (which is expensive), verify the code actually builds and passes project quality gates:
+Tasks self-report their verification status. Check that the report is complete:
 
-1. **Run task-specified verification:**
-   - If the task's `plan.md` specified verification commands (e.g., `make build`, `make test`), run them
-   - These are typically in a "## Verification" section of the plan
+1. **Check output.yaml exists** and has required fields including `verification-summary`
+2. **Check evidence files exist** in the task directory:
+   - For automated: `verification.log`, potentially `test-results.json`
+   - For manual: `manual-evidence.log`
+   - For review: `verification.log`
+3. **Check evidence is not empty** - files have content, not just placeholder text
 
-2. **Run project-level lint:**
-   - Always run the project's lint command (e.g., `make lint`)
-   - Lint failures break the build gate and must be fixed
+If evidence is missing or empty:
+- Mark task as `fixing`
+- Create fix task to add verification evidence
+- Skip critique
 
-3. **Evaluate results:**
-   - If all verification passes: proceed to Step 3b (Critique)
-   - If any verification fails: mark task as `fixing`, create a fix task for the verification failure, skip critique
-   
-**Why this order matters:**
-
-Build verification is cheap and deterministic - it either passes or fails quickly. Critique agents are expensive (run complex code analysis, potentially slow). Running build verification first means:
-
-- Save time: Don't waste effort critiquing code that doesn't even compile or lint
-- Faster feedback: Developers get immediate "code doesn't build" feedback
-- Better critique: Critique agents review working code, not broken code
-
-**Severity classification:**
-- Lint errors → blocking (breaks build gate)
-- Build errors → blocking (code doesn't compile)  
-- Test failures → blocking (broken functionality)
-- Lint warnings → warning (non-blocking, but should be addressed)
-
-If build verification fails, create a fix task immediately. Don't run critique on broken code.
+If evidence exists and looks reasonable:
+- Proceed to Step 3b (Critique) if critique is enabled for this task
+- Mark task `completed` if critique is disabled
 
 ### Step 3b: Critique (if enabled)
 
@@ -531,6 +577,7 @@ If critique is enabled for this task (via global config or per-task override), d
    - The original `plan.md` (what was asked for)
    - The `output.yaml` (what the doer claims it did)
    - Access to read the actual file changes in the codebase
+   - **Access to read evidence files** in the task directory (verification.log, test-results.json, manual-evidence.log)
    - The repository root and task directory paths
    - The custom `critique.prompt` if provided, otherwise the default critique prompt (below)
 2. The critique agent writes `critique.yaml` to the task directory
@@ -584,6 +631,7 @@ You are reviewing the work of another agent. You have:
 1. The original plan (plan.md) describing what was asked
 2. The agent's self-reported output (output.yaml)
 3. The actual file changes in the codebase
+4. The verification evidence files in the task directory
 
 Evaluate whether:
 - The objective in plan.md was met
@@ -591,21 +639,23 @@ Evaluate whether:
 - The code changes are correct and complete
 - No unintended side effects were introduced
 - Constraints from the plan were respected
+- **Verification was actually performed:**
+  - For automated: Check verification.log shows tests/builds were run
+  - For manual: Check manual-evidence.log demonstrates the task works
+  - For review: Check verification.log shows compile/lint/tests were run
+- **Verification evidence matches the summary** in output.yaml
 
-Important: Issues that break the build gate must be marked as blocking:
-- Lint errors (ESLint, Prettier violations)
-- Type errors
-- Build failures
-- Test failures
+Important: Issues that must be marked as blocking:
+- Objective not met
+- Verification not performed (missing or fake evidence)
+- Verification evidence contradicts the summary
+- Code changes don't match what was claimed
+- Build/test/lint failures in evidence
 
 Write critique.yaml to your task directory with your verdict
 (accepted | needs-work) and a list of specific issues with severity
 (blocking | warning | nit).
 Only blocking issues should result in a needs-work verdict.
-
-Note: Build verification runs BEFORE critique. If the code doesn't
-compile or has lint errors, the task is already marked as fixing.
-You're reviewing code that builds successfully.
 ```
 
 #### Default explore critique prompt
@@ -675,41 +725,82 @@ This escalation policy applies to both verification failures and critique reject
 
 There is no hard retry limit. Escalation ensures the user is involved when things are not converging. Note: when a fix task is itself rejected by critique and a new fix task is created, both contribute to the fix depth. This is conservative -- it may over-count relative to the number of distinct fix attempts, but ensures the user is involved sooner rather than later.
 
-## Phase 5: Verification
+## Phase 5: Full Build Verification
 
 After all tasks are completed (and critiques passed, if enabled):
 
 If no tasks modified any files (`files-modified` is empty across all completed tasks at the time Phase 5 begins), skip to Phase 7.
 
-If all verification fields are omitted (no build, test, lint, or custom commands), verification is trivially satisfied and Phase 5 proceeds directly to Phase 6.
+### Run Full Build
 
-All verification commands run from the repository root unless `verify.workdir` specifies a different directory.
+Consult project build documentation to determine the complete verification suite. A full build typically includes:
+- **Generate** (if applicable): Code generation step
+- **Lint**: Project-wide linting
+- **Build**: Full compilation/build
+- **Test**: Complete test suite
 
-1. Run verification commands in order from the `verify` section:
-   - Build
-   - Test
-   - Lint
-   - Custom commands
-2. If all pass: proceed to Phase 6
-3. If any fail: enter the fix loop
+Run the commands identified from project documentation (README.md, CONTRIBUTING.md, Makefile, package.json scripts, etc.)
 
-### Fix loop
+Save output to `dispatch/<run-name>/final-build.log`
 
-The fix loop is iterative: after re-verification, control returns to step 1 of this loop, not to a nested invocation of Phase 5.
+### Compare to Baseline
 
-1. **Diagnose**: Analyze the failure output. Attribute the failure to specific task(s) by examining which files were modified and what errors occurred. When a failure is caused by an interaction between multiple tasks (e.g., mismatched interfaces), attribute it to all involved tasks.
+Compare final build results to `baseline-build.log` (captured at dispatch start):
 
-2. **Mark originals**: For each attributed original task, transition its status from `completed` to `fixing`.
+1. **If final build passes and baseline passed**: Success, proceed to Phase 6
+2. **If final build fails and baseline failed with same errors**: No regression introduced, proceed to Phase 6
+3. **If final build has NEW failures not in baseline**: Regression introduced, enter fix loop
 
-3. **Create fix tasks**: See Fix Task Creation.
+### Attribution and Fix Loop
 
-4. **Execute fixes**: Re-enter Phase 4 (Steps 1-5). The new fix tasks will naturally be the only pending tasks with satisfied dependencies. When Phase 4 completes (all tasks are `completed` or `failed`), return control to the fix loop -- do not apply Phase 4's all-tasks-failed exit path. The fix loop handles failure outcomes via escalation. If the fix task itself fails (status `failed` rather than completing successfully), the re-verification in step 5 will still fail, and steps 1-6 repeat -- the failed fix task contributes to escalation depth. Note: Step 3b optimistically transitions originals to `completed` when fix tasks succeed. If re-verification subsequently fails, the fix loop re-transitions them to `fixing`. On resume, this is safe because Phase 5 always re-runs verification. Fix tasks created by the verification fix loop go through the normal Phase 4 pipeline, including critique if enabled. Critique rejections within the fix loop create additional fix tasks and contribute to escalation depth.
+When regressions are detected:
 
-5. **Re-verify**: Re-run all verification commands. If all pass, exit the fix loop and proceed to Phase 6. If any fail, continue to step 6.
+1. **Attribute failures to tasks**: Launch a subagent (general or explore agent) to analyze:
+   - Which files have errors
+   - Which tasks modified those files
+   - Map errors to responsible task(s)
+   - Save attribution to `dispatch/<run-name>/failure-attribution.md`
 
-6. **Cascade check**: If a fix task changed the interface or contract that downstream completed tasks consumed (e.g., renamed an export, changed a function signature, modified a shared type), those downstream tasks may now be inconsistent. The re-verification in step 5 will catch this if it causes build, test, or lint failures. When it does, attribute the new failure to the original task(s) whose fix changed the interface and to the affected downstream tasks. Transition all attributed tasks to `fixing` and create fix tasks to address the interaction. If the interface change is significant enough that downstream work is fundamentally invalidated, consult the user before creating fix tasks.
+2. **Create fix tasks**: For each task with attributed failures
+   - Mark original task as `fixing`
+   - Create fix task with error details and attribution
 
-7. **Repeat** steps 1-6 until verification passes or escalation triggers user intervention.
+3. **Re-run Phase 4**: Execute fix tasks through normal dispatch flow
+
+4. **Re-verify**: Run full build again, compare to baseline
+
+5. **Repeat** until final build matches baseline (no new failures)
+
+### Fix Loop Details
+
+The fix loop handles regressions detected in Phase 5:
+
+1. **Attribution subagent analyzes**:
+   - Reads `baseline-build.log` and `final-build.log`
+   - Identifies new failures (not present in baseline)
+   - Maps failures to files
+   - Maps files to tasks that modified them
+   - Writes `failure-attribution.md` with analysis
+
+2. **Mark originals**: For each task with attributed failures, transition status from `completed` to `fixing`
+
+3. **Create fix tasks**: See Fix Task Creation section
+
+4. **Execute fixes**: Re-enter Phase 4 (Steps 1-5)
+   - Fix tasks execute normally
+   - Include critique if enabled
+   - Step 3c transitions originals to `completed` when fixes succeed
+
+5. **Re-verify**: Run full build again, compare to baseline
+   - If matches baseline: exit loop, proceed to Phase 6
+   - If new failures remain: return to step 1
+
+6. **Cascade check**: If a fix changed interfaces affecting downstream tasks:
+   - Attribution subagent detects cross-task failures
+   - Attributes to both the fix task and affected downstream tasks
+   - Create fix tasks for all involved parties
+
+7. **Repeat** until verification passes or escalation triggers user intervention
 
 ## Fix Task Creation
 
