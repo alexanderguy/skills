@@ -674,15 +674,15 @@ If you need to explore the codebase to understand structure, do it now (use Task
 
 ## Phase 2: Plan with Dispatch
 
-### Step 1: Load Dispatch Skill
+### Step 1: Load Dispatch Skill (For Learning Only)
 
-**IMMEDIATELY load the dispatch skill** to understand the dispatch system:
+**Load the dispatch skill once** to understand how dispatch works:
 
 ```
 skill(name="dispatch")
 ```
 
-**Do this BEFORE creating any plan.** Loading dispatch is not optional - you need to understand how dispatch works before you can write a meaningful proposal.
+**Purpose:** Learn dispatch concepts BEFORE planning. Do NOT execute yet.
 
 **What you're learning:**
 - How dispatch structures task plans
@@ -691,7 +691,11 @@ skill(name="dispatch")
 - How the DAG and dependencies work
 - What quality gates dispatch enforces
 
-After loading dispatch, you will create a proposal following dispatch principles, then load dispatch again with your approved proposal to execute.
+**AFTER loading dispatch:**
+1. Read and understand the skill
+2. Proceed to Step 2 (Extract Quality Gates)
+3. Continue through Steps 2-7 to create proposal and get approval
+4. **Do NOT load dispatch again until Phase 3**
 
 ### Step 2: Extract Quality Gates
 
@@ -866,16 +870,28 @@ Your decision:
 
 **You may NOT execute dispatch until user explicitly approves.**
 
+### Step 8: WAIT - Do Not Proceed Until Approval
+
+**STOP HERE.** Do not load dispatch again. Do not execute anything.
+
+**You have completed Phase 2 (Planning). Now you must:**
+1. Wait for user response to your approval request
+2. If user says **APPROVE** → Proceed to Phase 3 (Execution)
+3. If user says **MODIFY** → Return to Step 3 in Phase 2
+4. If user says **REJECT** → Stop, report failure to user
+
+**DO NOT** load the dispatch skill again until you are in Phase 3 with explicit approval.
+
 If the plan has structural issues (circular dependencies, missing tasks, unclear objectives), fix them before presenting. If you're unsure how to structure the plan, consult greybeard for technical guidance.
 
 ## Phase 3: Execute and Monitor
 
 **CRITICAL: You may only enter Phase 3 after receiving explicit user approval.**
 
-**Before executing, verify:**
-- [ ] User has explicitly approved the dispatch (Step 7)
+**Entry requirements:**
+- [ ] User explicitly clicked "APPROVE" in Step 7
 - [ ] Dispatch proposal exists at `dispatch/<run-name>/proposal.md`
-- [ ] You are executing the APPROVED plan, not a modified version
+- [ ] You have NOT modified the plan since approval
 
 **If user requested modifications:**
 - Return to Phase 2, Step 3
@@ -883,16 +899,27 @@ If the plan has structural issues (circular dependencies, missing tasks, unclear
 - Re-verify against quality gates (Step 4)
 - Write updated proposal (Step 5)
 - Re-present for approval (Step 7)
+- **Get new approval before entering Phase 3**
 
 **You may NOT:**
+- Execute without explicit approval
 - Execute a modified plan without re-approval
 - Skip steps because "the user probably wants this"
 - Add tasks not in the approved plan
 - Remove tasks from the approved plan
 
-Run the dispatch execution engine:
+### Step 1: Execute Dispatch (With Approved Plan)
 
-1. Load dispatch skill with the APPROVED plan
+**Now** you load dispatch to execute the approved plan:
+
+```
+skill(name="dispatch", arguments="dispatch/<run-name>/dispatch.yaml")
+```
+
+**Note:** If you only created `proposal.md` (human-readable), you need to also create `dispatch.yaml` (machine-readable manifest) from the same plan. Dispatch will execute the manifest.
+
+**After loading dispatch:**
+1. Let dispatch orchestrate the execution
 2. Monitor task completion
 3. Watch for patterns in failures
 4. Identify when fix loops aren't converging
