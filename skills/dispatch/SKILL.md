@@ -389,6 +389,17 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 - The DAG ordering makes sense -- tasks do not depend on unrelated tasks purely for serialization
 - Constraints across tasks do not contradict each other
 
+### Parallelization Constraints
+
+**Tasks that share mutable state cannot run in parallel.** When tasks operate within the same worktree/repository and affect shared resources, they MUST be serialized via `depends-on` edges, even if they don't directly depend on each other's outputs. Common examples:
+
+- **Mutating git operations**: Tasks that commit (`git commit`), checkout branches (`git checkout`), modify the git index (`git add`, `git rm`), or change repository state must be serialized. Read-only operations (`git status`, `git log`, `git diff`) are safe to run in parallel. Two simultaneous `git commit` operations will corrupt the repository state.
+- **Build systems**: Tasks running `make`, `npm run build`, or similar must be serialized if they write to shared build artifacts, caches, or output directories.
+- **File writes**: Tasks writing to the same file (caught in Coherence check) or files with shared dependencies (e.g., two tasks appending to the same log file).
+- **Test databases**: Tasks that reset or mutate shared test databases must be serialized.
+
+**The rule**: If two tasks would interfere with each other when run simultaneously in the same repository, add a `depends-on` edge to enforce ordering. Do not rely on timing or assume "it will probably be fine."
+
 ### Feasibility
 
 - Referenced files actually exist in the codebase, or are explicitly created by this task, or are explicitly created by an upstream dependency (as stated in that task's plan)
@@ -432,7 +443,11 @@ If the ready set is empty and non-completed tasks remain, there is a deadlock (c
 
 ### Step 2: Batch and fan out
 
-Take up to `max-parallel` tasks from the ready set, accounting for any currently dispatched tasks or running critique agents (total concurrent subagents must not exceed `max-parallel`). For each task:
+Take up to `max-parallel` tasks from the ready set, accounting for any currently dispatched tasks or running critique agents (total concurrent subagents must not exceed `max-parallel`).
+
+**Critical**: Ensure all tasks in the batch can safely run in parallel. Tasks that share mutable state (git operations, build commands, writing the same files) must not be in the same batch - they should have been serialized via `depends-on` edges during planning (see "Parallelization Constraints" in Phase 3).
+
+For each task:
 
 1. Read the task's `plan.md`
 2. If `receives` (or `depends-on` when `receives` is omitted) references upstream tasks, read their `output.yaml` files and inject the content into the subagent's prompt as upstream context. Do not mutate `plan.md` on disk -- the upstream context is only included in the prompt sent to the subagent.
@@ -842,3 +857,13 @@ From the philosophy skill:
 - **Simple is usually harder than easy** -- The DAG should reflect real dependencies, not imagined ones. Do not serialize tasks that can run in parallel.
 - **Do no harm** -- Verify before declaring victory. Verification commands exist for a reason. The style skill says "do not work around a failing build" -- dispatch's fix loop is not a workaround; it is an active attempt to resolve the failure. If the fix loop cannot converge, escalation ensures the user is involved.
 - **Constraint ownership** -- Each subagent owns its task directory. The orchestrator owns the manifest. Do not cross boundaries.
+
+### Parallelization Safety
+
+**Not all tasks can run in parallel.** Tasks sharing mutable state within the same repository must be serialized:
+
+- **Mutating git operations** (commit, checkout, stash, add, rm) modify global repository state and must be serialized. Read-only git operations (status, log, diff) are safe to run in parallel.
+- Build systems write to shared output directories and caches
+- File operations targeting the same paths create race conditions
+
+When in doubt, add a `depends-on` edge. Parallelism is an optimization; correctness is mandatory. A conservative DAG that serializes potentially conflicting tasks is better than a corrupted repository state.
