@@ -12,8 +12,7 @@ Orchestrate parallel subagent execution across a dependency graph. Fan out work 
 
 Before doing anything else:
 
-1. Load the `style` and `philosophy` skills
-2. Detect what `$ARGUMENTS` is (the argument string passed to the skill by the caller):
+1. Detect what `$ARGUMENTS` is (the argument string passed to the skill by the caller):
    - If it resolves to an existing `dispatch/<name>/dispatch.yaml`, resume that run (skip to Resumability section)
    - If it resolves to an existing file, treat it as a plan to execute (skip to Phase 2)
    - Otherwise, treat it as a goal description and enter Phase 1
