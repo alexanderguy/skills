@@ -267,6 +267,9 @@ tasks:
       agent: critique        # defaults to critique
       prompt: |
         Custom critique instructions for this task.
+      validate-fix:          # optional: enable mutation testing validation
+        enabled: false       # opt-in; must be explicitly enabled
+        test-command: ""     # command to run test(s) for validation
     commit-group: ""         # optional; used with 'grouped' commit strategy
 
   - id: 2a-integrate_modules
@@ -673,6 +676,21 @@ Critique agents count toward `max-parallel`.
 
 If critique is not enabled for the task, mark it `completed` immediately.
 
+**Handling validation results:**
+
+If `validate-fix` was enabled and the critique agent performed mutation testing:
+1. Check `validation.mutation-test` in critique.yaml
+2. Verify without-fix.status is "failed" and with-fix.status is "passed"
+3. If validation failed, treat as a blocking issue (needs-work verdict)
+4. Evidence files (mutation-test-*.log) remain in task directory for reference
+
+**Handling new test files:**
+
+If critique.yaml contains a `new-tests` field:
+1. Add these files to the task's `files-modified` list in the manifest
+2. These files will be included when the task's commit is created
+3. This ensures critique-created tests are properly committed
+
 For `explore` agents, critique works differently since there are no file changes to review. Instead, the critique agent verifies the explore agent's findings against the actual codebase:
 
 1. Spawn a critique agent (using the `agent` type from the critique config, defaulting to `critique`) that receives:
@@ -690,6 +708,17 @@ For `explore` agents, critique works differently since there are no file changes
 
 ```yaml
 verdict: accepted | needs-work
+validation:              # present only if validate-fix was enabled
+  mutation-test:
+    fix-commit: abc123   # commit SHA that was reverted for validation
+    without-fix:
+      status: failed     # expected: test should fail without fix
+      evidence-file: mutation-test-without-fix.log  # in task directory
+    with-fix:
+      status: passed     # expected: test should pass with fix
+      evidence-file: mutation-test-with-fix.log     # in task directory
+new-tests:               # files critique created that should be committed
+  - src/tests/range-field.spec.ts
 issues:
   - severity: blocking | warning | nit
     file: src/routes/users/create.ts
@@ -699,7 +728,7 @@ notes: |
   Two issues need addressing.
 ```
 
-Only `blocking` issues result in a `needs-work` verdict. Warnings and nits are recorded but do not block completion.
+Only `blocking` issues result in a `needs-work` verdict. Validation failures (test passes without fix or fails with fix) are blocking issues. Warnings and nits are recorded but do not block completion.
 
 The critique agent uses the `critique` agent type. The agent must be able to write `critique.yaml` to the task directory. The critique prompt instructs it only to review and report. If a critique agent modifies source files, treat this as a bug and discard those changes. To detect this, the orchestrator should snapshot modified files (via `git status` or equivalent) before dispatching the critique agent and revert any newly modified files outside the task directory afterward.
 
@@ -738,6 +767,45 @@ Write critique.yaml to your task directory with your verdict
 (accepted | needs-work) and a list of specific issues with severity
 (blocking | warning | nit).
 Only blocking issues should result in a needs-work verdict.
+```
+
+#### Default critique prompt with validation
+
+When `validate-fix` is enabled for this task:
+
+```
+You are reviewing the work of another agent with MUTATION TESTING enabled.
+
+Follow the standard critique process, then perform validation:
+
+MUTATION TESTING PROCEDURE:
+1. Identify the fix commit from files-modified in output.yaml
+2. Revert the fix: git revert --no-commit <fix-commit-sha>
+3. Run the test command: <test-command from validate-fix config>
+4. Capture full output to: mutation-test-without-fix.log (in your task directory)
+5. Restore the fix: git revert --abort
+6. Run the test command again
+7. Capture full output to: mutation-test-with-fix.log (in your task directory)
+
+VALIDATION CRITERIA:
+- Test MUST fail when fix is reverted (without-fix status: failed)
+- Test MUST pass when fix is present (with-fix status: passed)
+- Any deviation is a BLOCKING issue
+
+FILE LOCATIONS:
+- Your task directory: dispatch/<run-name>/<task-id>/
+- Write evidence files (mutation-test-*.log) to your task directory
+- If you create additional test files, place them in the repository (not task directory)
+
+WORKING TREE REQUIREMENTS:
+- DO NOT make any git commits
+- Working tree must be clean when finished (back to original state)
+- Exception: new test files you create should remain
+
+OUTPUT:
+Include validation results in critique.yaml:
+- validation.mutation-test: commit SHA and test results
+- new-tests: list any test files you created (for orchestrator to commit)
 ```
 
 #### Default explore critique prompt
