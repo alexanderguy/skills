@@ -77,12 +77,14 @@ If YES → **STOP.** Create a dispatch plan instead.
 
 **YOU DO NOT WRITE CODE. YOU DO NOT EDIT FILES. YOU DO NOT IMPLEMENT FEATURES.**
 
-Your job is to **orchestrate** implementation by other agents using the dispatch skill. When you receive a non-trivial goal:
+Your job is to **orchestrate** implementation by other agents using the dispatch skill. When you receive a non-trivial goal, follow the workflow below:
 
-1. **Load the dispatch skill** - Do this immediately for any multi-step goal
-2. **Create a dispatch plan** - Break the goal into tasks for other agents
-3. **Execute the dispatch** - Let dispatch coordinate the implementation agents
+1. **Understand requirements** - Use interview/question tools to clarify the goal
+2. **Plan with dispatch** - Follow Phase 2 workflow to create an approved plan
+3. **Execute via dispatch** - Load dispatch with approved plan to coordinate implementation agents
 4. **Monitor and report** - Track progress and escalate blockers
+
+**See detailed workflow below for specific steps.**
 
 **If you find yourself:**
 - Writing code directly
@@ -741,35 +743,36 @@ Create a checklist of requirements specific to this plan.
    - Create explicit commit tasks in the dispatch DAG
    - Example: "commit-phase-1" task that depends on all Phase 1 tasks, commits their work
 
-### Step 4: Verify Against Quality Gates
+### Step 4: Verify Plan Quality
 
-Before presenting to the user, verify the plan against your quality gates checklist:
+Before presenting to the user, verify the **plan itself** (not execution) meets quality standards:
 
 ```markdown
-## Quality Gate Verification
+## Plan Quality Checklist
 
-From `style` skill:
-✅/❌ All code-producing tasks have build verification
-✅/❌ All test-writing tasks verify tests pass
-✅/❌ No workarounds for failing builds
+**Task Design:**
+✅/❌ All code-producing tasks include build verification in their plans
+✅/❌ All test-writing tasks include test verification in their plans
+✅/❌ No workarounds for failing builds planned
 
-From `philosophy` skill:
-✅/❌ Tests treated as first-class verification
-✅/❌ Commit strategy enables debugging
+**Debuggability:**
+✅/❌ Tests treated as first-class (not optional) in task designs
+✅/❌ Commit strategy enables debugging (per-task commits preferred)
 
-From AGENTS.md:
-✅/❌ If Phase 5 fails, can isolate which task caused it
-✅/❌ Plan doesn't create multi-task debugging scenarios
+**Maintainability:**
+✅/❌ Plan avoids "debugging 15 tasks at once" scenarios
+✅/❌ Fix at right layer (no symptom-chasing planned)
+✅/❌ No multiple fixes to same subsystem planned
 
-Large dispatch considerations:
-✅/❌ For dispatches with >10 tasks or multiple phases, commit checkpoints added
+**Large Dispatch Safety:**
+✅/❌ For >10 tasks or multiple phases: commit checkpoints planned
 ✅/❌ Prevents losing work if later phases fail
 
 Gaps addressed:
 - [List any issues found and how you fixed them]
 ```
 
-### Step 4: Write Dispatch Proposal
+### Step 5: Write Dispatch Proposal
 
 Before presenting to the user, you MUST write a formal proposal document:
 
@@ -814,11 +817,11 @@ Where `<run-name>` is a short kebab-case description (e.g., `add-auth`, `migrate
 [PROCEED / NEEDS_REVIEW / BLOCKED]
 ```
 
-**You may NOT proceed to Step 5 without writing this proposal.**
+**You may NOT proceed to Step 6 without writing this proposal.**
 
 **Note:** You are creating the dispatch directory structure early. When you later load the dispatch skill, it will see the existing proposal and build the full plan based on your approved proposal.
 
-### Step 5: Critique Review (Optional but Recommended)
+### Step 6: Critique Review (Optional but Recommended)
 
 For complex dispatches (>5 tasks or high risk), consult greybeard to review your proposal:
 
@@ -835,7 +838,7 @@ Specific concerns:
 
 Address any feedback before proceeding.
 
-### Step 6: Present to User for Approval
+### Step 7: Present to User for Approval
 
 **Present in this exact order:**
 
