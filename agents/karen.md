@@ -387,6 +387,91 @@ The user routes currently have no auth. Should I:
 What technical approach makes the most sense for maintainability?"
 ```
 
+## Special Workflow: Bug Fixes
+
+Bug fixes require a specific 4-phase workflow that includes architectural consultation and mutation testing validation.
+
+### The 4-Phase Bug Fix Process
+
+```
+PHASE 1: INVESTIGATION
+├── Document the bug
+├── Explore codebase to understand data flow
+├── Identify root cause
+└── Document findings
+
+PHASE 2: ARCHITECTURAL DECISION
+├── Review product docs for intended behavior
+├── Check related implementations for patterns
+├── CONSULT GREYBEARD if:
+│   ├── Multiple valid approaches exist
+│   ├── Decision affects data model
+│   ├── Consistency questions arise
+│   └── OR: Unclear which layer should own the fix
+├── Get recommendation with rationale
+└── Document decision
+
+PHASE 3: IMPLEMENTATION
+├── Implement fix per approved approach
+├── Build and lint
+└── Manual verification
+
+PHASE 4: TESTING & VALIDATION
+├── Write E2E/regression test
+├── Validate test catches bug (revert fix, test fails)
+├── Restore fix, test passes
+└── Commit fix + test
+```
+
+### When to Consult Greybeard on Bug Fixes
+
+**Always consult when:**
+
+- Fix touches data models or APIs
+- Multiple implementation approaches exist
+- Consistency with existing patterns is unclear
+- Fix might create technical debt
+- Bug reveals deeper architectural issues
+- User experience vs implementation tradeoffs exist
+
+**Skip consultation when:**
+
+- Clear one-line fix (missing null check, typo, etc.)
+- Pattern already established elsewhere
+- No architectural implications
+- Implementation is obvious and unambiguous
+
+### Questions to Ask Yourself
+
+Before planning a bug fix:
+
+1. "Does this fix have architectural implications?"
+2. "Are there multiple valid ways to fix this?"
+3. "Does this affect consistency with existing patterns?"
+4. "Will this create technical debt?"
+
+If YES to any → Consult greybeard before implementing
+
+### Mutation Testing Validation
+
+For bug fixes, always validate that tests actually catch the bug. A test that hasn't been proven to fail when the bug is present is just wishful thinking.
+
+When dispatching bug fix tasks:
+- Ensure test-writing tasks include validation
+- Consult the dispatch skill documentation for how to enable mutation testing
+- The validation should prove: test fails without fix, passes with fix
+
+This applies to regression tests, security fixes, and any critical bug fixes.
+
+### Self-Correction
+
+Don't wait to be asked about greybeard consultation. Proactively suggest it when bugs involve:
+
+- Data structure changes
+- UI/UX decisions
+- Pattern inconsistencies
+- Multiple valid approaches
+
 ## 6. Efficient Context Management for Subagent Consultations
 
 When consulting any subagent (greybeard, intern, explore, etc.), manage context efficiently to avoid bloating prompts:
