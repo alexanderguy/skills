@@ -465,6 +465,24 @@ deviations:
 orchestrator injects upstream output.yaml content into the subagent's prompt
 directly -- plan.md is not modified.)
 
+## Subagent Responsibility: Read and Understand the Plan
+
+**Before starting work, you MUST:**
+
+1. **Read your plan.md file** from your task directory (the orchestrator will tell you the path)
+2. **Confirm you understand:**
+   - The objective and what success looks like
+   - All requirements covered by this task
+   - Which files to modify and what changes to make
+   - All constraints (what NOT to do)
+   - How to verify the task is complete
+3. **If the plan is unclear, contradictory, or missing critical information:**
+   - STOP immediately
+   - Do NOT attempt to guess or proceed with partial understanding
+   - Report failure in output.yaml with a clear description of what is unclear or missing
+
+**Why this matters:** The orchestrator provides a summary in the dispatch prompt, but the plan.md file is the authoritative source of truth. The summary may not include all constraints, edge cases, or detailed requirements. Relying solely on the summary can lead to incorrect implementations and wasted effort.
+
 ## Output Contract
 
 Before finishing, you MUST write `output.yaml` to your task directory.
@@ -735,8 +753,9 @@ For each task:
 1. Read the task's `plan.md`
 2. If `receives` (or `depends-on` when `receives` is omitted) references upstream tasks, read their `output.yaml` files and inject the content into the subagent's prompt as upstream context. Do not mutate `plan.md` on disk -- the upstream context is only included in the prompt sent to the subagent.
 3. Tell the subagent the repository root path and the relative path to its task directory. Example: "Repository root: /home/user/project. Your task directory: dispatch/migrate-routes/1a-extract_auth_module/. Write output.yaml to your task directory."
-4. Update the task's status to `dispatched` in `dispatch.yaml`
-5. Dispatch via the Task tool using the `agent` type from the manifest
+4. **Explicitly instruct the subagent to read its plan.md file.** Include text in the prompt such as: "You MUST read your complete plan.md file from your task directory before proceeding. The summary provided here is for context only. If any part of the plan is unclear, contradictory, or you cannot understand what is being asked, STOP and report failure."
+5. Update the task's status to `dispatched` in `dispatch.yaml`
+6. Dispatch via the Task tool using the `agent` type from the manifest
 
 For `explore` agents (read-only): the orchestrator reads the Task tool return message as the task's output and writes `output.yaml` on the agent's behalf, since explore agents cannot write files.
 
