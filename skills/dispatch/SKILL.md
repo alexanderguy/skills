@@ -1,7 +1,7 @@
 ---
 name: dispatch
-argument-hint: <goal-or-plan-file>
-description: Orchestrate parallel subagent execution with DAG scheduling, fan-out/fan-in, and iterative fix loops
+argument-hint: [dispatch/<name>/dispatch.yaml]
+description: Orchestrate parallel subagent execution with DAG scheduling, fan-out/fan-in, and iterative fix loops. Run without arguments to create a new dispatch (uses interview skill to gather requirements).
 ---
 
 # Dispatch
@@ -10,16 +10,61 @@ Orchestrate parallel subagent execution across a dependency graph. Fan out work 
 
 ## Initialization
 
-Before doing anything else:
+The dispatch skill operates in two non-reentrant modes. Both modes converge at a checkpoint where the plan is presented and explicit user confirmation is required before execution begins.
 
-1. Detect what `$ARGUMENTS` is (the argument string passed to the skill by the caller):
-   - If it resolves to an existing `dispatch/<name>/dispatch.yaml`, resume that run (skip to Resumability section)
-   - If it resolves to an existing file, treat it as a plan to execute (skip to Phase 2)
-   - Otherwise, treat it as a goal description and enter Phase 1
+### Mode 1: With Argument (Existing Dispatch)
+
+Use this mode to validate and continue an existing dispatch run.
+
+**When to use:** `$ARGUMENTS` points to an existing `dispatch/<name>/dispatch.yaml`
+
+**Flow:**
+1. Load the existing `dispatch.yaml`
+2. Analyze current state (completed, pending, failed tasks)
+3. Proceed to **Checkpoint** (see below)
+
+### Mode 2: Without Argument (New Dispatch)
+
+Use this mode to create a new dispatch from scratch.
+
+**When to use:** `$ARGUMENTS` is empty
+
+**Flow:**
+1. **Gather Requirements** (invoke interview skill)
+   - Run comprehensive interview to understand the goal
+   - Save spec to `specs/<run-name>-spec.md`
+   - Derive `<run-name>` from the goal (kebab-case)
+
+2. **Build Dispatch Plan** (Phase 1 Planning)
+   - Use `explore` agents to understand codebase scope
+   - Break goal into discrete tasks
+   - Identify dependencies (DAG edges)
+   - Select agent types for each task
+   - Add verification steps
+   - Choose commit strategy
+   - Decide which tasks need critique
+
+3. **Create Directory Structure** (Phase 2)
+   - Create `dispatch/<run-name>/` directory
+   - Write `dispatch.yaml` manifest
+   - Write `plan.md` files for each task
+
+4. Proceed to **Checkpoint** (see below for validation, presentation, and confirmation)
+
+**On decline at Checkpoint:**
+- Dispatch files remain in `dispatch/<run-name>/` for manual review
+- Spec remains in `specs/<run-name>-spec.md`
+- User can re-run later with: `dispatch dispatch/<run-name>/dispatch.yaml`
 
 ## Phase 1: Planning
 
-When `$ARGUMENTS` is a goal description:
+This phase is entered only in **Mode 2** (without argument) after the interview skill has created a spec file at `specs/<run-name>-spec.md`.
+
+**Prerequisites:**
+- Spec file exists with complete requirements
+- User has confirmed the spec is ready for implementation
+
+**Input:** The spec file from `specs/<run-name>-spec.md`
 
 0. **Validate requirements completeness:**
    - Confirm the goal is sufficiently specified to create implementable tasks
@@ -140,12 +185,7 @@ Early failure detection is cheap. If task 3a writes tests and immediately runs t
 
 The quality gates prevent the expensive scenario.
 
-When `$ARGUMENTS` is a plan file:
-
-1. Read the plan and extract tasks, dependencies, and verification steps
-2. Create the dispatch directory structure from the plan
-
-Regardless of input type, present the plan to the user for approval before executing. Present the quality gate verification first, then a summary of all tasks, their dependencies, agent types, and the verification commands. The user may approve as-is, request modifications (add/remove/reorder tasks, change dependencies), or abort.
+**After Phase 2 completes:** Proceed to the Presentation Checkpoint (see Checkpoint section below)
 
 ## Phase 2: Directory Structure
 
@@ -554,6 +594,112 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 For simple issues (like a missing dependency edge between tasks that touch the same file), fix the plan and propose the fix to the user. For ambiguous issues, ask.
 
 On resume, re-validate the remaining (non-completed) portion of the DAG before continuing.
+
+## Checkpoint: Validation, Presentation, and Confirmation
+
+This is the convergence point for both **Mode 1** (existing dispatch) and **Mode 2** (new dispatch). All flows pass through here before execution begins.
+
+### Step 1: Validate
+
+Run Phase 3 validation on the dispatch:
+
+- **Structural integrity**: DAG acyclicity, valid task references, required fields present
+- **Completeness**: All tasks have clear objectives, files specified, requirements covered
+- **Coherence**: No conflicting constraints, parallelization constraints respected
+- **Feasibility**: Referenced files exist or will be created, appropriate agent types
+
+**Validation outcomes:**
+- **Valid**: Proceed to presentation
+- **Warnings**: Present warnings, ask whether to proceed or adjust
+- **Blocking issues**: Present issues, do not proceed until resolved
+
+### Step 2: Present
+
+Display the current state to the user before requesting confirmation.
+
+**For Mode 1 (Existing Dispatch):**
+```
+Dispatch: <run-name>
+Status: <pending|in-progress>
+
+Task Summary:
+- Completed: X tasks
+- Pending: Y tasks
+- Failed: Z tasks
+- In Progress: W tasks
+
+Pending/Failed Tasks:
+- 2a-<task>: Status: pending, Depends on: [1a, 1b]
+- 3b-<task>: Status: failed, Error: <brief-error>
+
+Ready to Resume: <yes/no> (based on ready set availability)
+
+Proceed with execution? (yes/no)
+```
+
+**For Mode 2 (New Dispatch):**
+```
+New Dispatch: <run-name>
+Goal: <goal-description>
+Spec: specs/<run-name>-spec.md
+
+Quality Gate Verification:
+✅ All code-producing tasks have build verification
+✅ All test-writing tasks verify tests pass
+✅ Commit strategy enables debugging (per-task)
+
+Task DAG (X tasks total):
+Level 1 (can run in parallel):
+- 1a-<task>: <agent-type> - <description>
+- 1b-<task>: <agent-type> - <description>
+
+Level 2:
+- 2a-<task>: depends on [1a] - <description>
+- 2b-<task>: depends on [1b] - <description>
+
+Level 3:
+- 3a-<task>: depends on [2a, 2b] - <description>
+
+Verification Commands:
+- Build: <command>
+- Test: <command>
+- Lint: <command>
+
+Critique Enabled: <yes/no> (X of Y tasks)
+Commit Strategy: <per-task|grouped|single>
+
+Dispatch files created at: dispatch/<run-name>/
+
+Proceed with execution? (yes/no)
+```
+
+### Step 3: Confirm
+
+Wait for explicit user confirmation before proceeding.
+
+**If user confirms ("yes"):**
+- Update `dispatch.yaml` status to `in-progress`
+- Proceed to Phase 4 (Execution Engine)
+- Execution proceeds linearly without returning to planning
+
+**If user declines ("no"):**
+- Exit cleanly without starting execution
+- Dispatch files remain intact for manual review
+- User can edit files directly, then re-run with: `dispatch dispatch/<run-name>/dispatch.yaml`
+
+**If user wants modifications:**
+The skill does NOT modify the plan interactively. The user must:
+1. Edit the relevant files (`dispatch.yaml`, `plan.md` files)
+2. Re-run with: `dispatch dispatch/<run-name>/dispatch.yaml`
+
+This maintains the non-reentrant property - once a plan is confirmed and execution begins, it proceeds to completion.
+
+### Why This Checkpoint Matters
+
+1. **Visibility**: User sees exactly what will be executed before it starts
+2. **Control**: User can abort or modify before any changes are made to the codebase
+3. **Safety**: No accidental execution of incomplete or incorrect plans
+4. **Debugging**: User can review the plan offline before committing to execution
 
 ## Phase 4: Execution Engine
 
@@ -1075,34 +1221,65 @@ When all tasks are completed, verification passes, and commits are done:
 
 ## Resumability
 
-When `$ARGUMENTS` points to an existing `dispatch.yaml`:
+This section describes how to resume a dispatch run. **Note:** This logic is invoked AFTER the Checkpoint (presentation + confirmation) in Mode 1.
 
-If the run status is `completed`, report the previous run's results and exit.
+### When `$ARGUMENTS` points to an existing `dispatch.yaml`:
 
-If the run status is `failed`, present the failure summary and ask the user whether to retry failed tasks (reset them to `pending` and set run status to `in-progress`) or abort.
+**First, execute Mode 1 flow:**
+1. Load and validate the dispatch
+2. Analyze current state
+3. Present status to user
+4. Wait for confirmation
 
-If the run status is `pending`, re-run Phase 3 validation and ask the user for approval before proceeding to Phase 4. The orchestrator was likely interrupted between plan approval and execution start.
+**Then, based on run status:**
 
-If the run status is `in-progress`:
+**If status is `completed`:**
+- Report previous results
+- Exit (no further action needed)
 
-1. Read the manifest
-2. Re-validate the remaining (non-completed) portion of the DAG (Phase 3)
-3. Resume based on task status:
+**If status is `failed`:**
+- Present failure summary at the Checkpoint
+- Ask user whether to:
+  - Retry failed tasks (reset to `pending`, set status to `in-progress`, proceed to Phase 4)
+  - Abort (exit, leave dispatch as-is)
+
+**If status is `pending`:**
+- Re-run Phase 3 validation
+- Present at Checkpoint
+- Ask for approval to proceed
+- If approved: set status to `in-progress`, proceed to Phase 4
+- This handles interruption between plan creation and execution
+
+**If status is `in-progress`:**
+1. Re-validate remaining DAG (Phase 3)
+2. Handle interrupted tasks based on status:
    - `completed`: skip
-   - `dispatched`: check whether `output.yaml` exists in the task directory. If it does, the subagent likely completed before the orchestrator was interrupted -- process the existing `output.yaml` through Steps 3/3a/3b instead of re-dispatching. If `output.yaml` does not exist, reset to `pending`.
-   - `failed`: present to user, ask whether to retry or skip
-   - `fixing`: check the associated fix task(s) (found by scanning for tasks whose `fixes` field references this task):
-     - If the fix task is `dispatched`: apply the same `output.yaml` check as regular dispatched tasks above
-     - If the fix task is `completed` but the parent is still `fixing`: transition the parent to `completed`
-     - If the fix task is `failed`: present to user, ask whether to retry or skip
-     - If the fix task is `pending`: leave both as-is; the fix task will be picked up by the ready set in Phase 4
-     - If no fix task exists: treat the original as `failed`, present to user
+   - `dispatched`: check for `output.yaml`. If exists, process it; else reset to `pending`
+   - `failed`: present at Checkpoint, ask to retry or skip
+   - `fixing`: check associated fix tasks:
+     - `dispatched`: check for `output.yaml`
+     - `completed` but parent still `fixing`: transition parent to `completed`
+     - `failed`: present at Checkpoint, ask to retry or skip
+     - `pending`: leave as-is
+     - No fix task exists: treat original as `failed`
    - `pending`: proceed normally
-4. Resume from Phase 4, Step 1
+3. After handling interrupted tasks, proceed from Phase 4, Step 1
 
-If `results.commits` is non-empty but run status is `in-progress`, the orchestrator was likely interrupted during Phase 6. Check which commits were already created (verify SHAs exist in the git log), skip those, and continue committing the remaining tasks. If all planned commits already exist, proceed directly to Phase 7.
+**If `results.commits` is non-empty but status is `in-progress`:**
+- Interruption occurred during Phase 6
+- Check which commits exist in git log
+- Skip existing commits
+- Continue committing remaining tasks
+- If all commits exist: proceed directly to Phase 7
 
-The orchestrator does not detect external changes to the working tree between interruption and resume. If files were manually modified, Phase 5 verification will catch build/test/lint failures, but unrelated manual changes that don't break verification may be silently included in Phase 6 commits. For a clean resume, the user should ensure the working tree has no unrelated modifications.
+### Clean Resume Requirements
+
+For a clean resume, ensure:
+- Working tree has no unrelated modifications
+- All `output.yaml` files in `dispatched` tasks are valid
+- No external changes to task directories
+
+The orchestrator does not detect external changes between interruption and resume. Phase 5 verification will catch build/test/lint issues, but unrelated modifications may be silently included in commits.
 
 ## Source of Truth Contract
 
