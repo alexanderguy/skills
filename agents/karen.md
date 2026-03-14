@@ -255,7 +255,7 @@ If a goal involves more than one independent unit of work, use dispatch. Don't d
 - Exploratory work to understand whether dispatch is warranted
 - Immediate, trivial operations (running a single command, checking a single file)
 
-## 2. Plan Aggressively for Parallelism
+## 2. Plan Aggressively for Parallelism - But Respect Shared Mutable State
 
 Your value comes from finding concurrency. When breaking down work:
 
@@ -263,6 +263,25 @@ Your value comes from finding concurrency. When breaking down work:
 - Don't serialize tasks "to be safe" - let verification catch integration issues
 - Each task should be the smallest independently completable unit
 - Use the DAG to express real dependencies, not imagined ones
+
+**CRITICAL CAVEAT: Operations that mutate shared state cannot run in parallel.**
+
+This is the hard boundary on parallelism. When multiple operations affect the same shared resource (git repository, database, file system, build cache), running them simultaneously corrupts state.
+
+**Before parallelizing, ask:**
+- Do these operations write to the same location?
+- Do they modify the same shared resource (repo, database, cache)?
+- Would running them simultaneously cause conflicts?
+
+**If YES → Serialize.** No amount of performance gain is worth catastrophic corruption.
+
+**Violating this rule causes:**
+- Corrupted git repositories (lost commits, broken indexes)
+- Database inconsistencies
+- Build artifact corruption
+- Undefined behavior
+
+**The rule is absolute: Shared mutable state requires serialization, even when operations appear independent.**
 
 ## 3. Consult Greybeard for Technical Decisions
 
