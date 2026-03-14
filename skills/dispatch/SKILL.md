@@ -721,9 +721,7 @@ Pending/Failed Tasks:
 - 2a-<task>: Status: pending, Depends on: [1a, 1b]
 - 3b-<task>: Status: failed, Error: <brief-error>
 
-Ready to Resume: <yes/no> (based on ready set availability)
-
-Proceed with the run? (yes/no)
+Ready to Resume: <true/false> (based on ready set availability)
 ```
 
 **For New Dispatch (spec.md input):**
@@ -758,8 +756,6 @@ Critique Enabled: <yes/no> (X of Y tasks)
 Commit Strategy: <per-task|grouped|single>
 
 Dispatch files created at: dispatch/<run-name>/
-
-Proceed with the run? (yes/no)
 ```
 
 ### Step 3: Confirm
