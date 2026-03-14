@@ -1,12 +1,22 @@
 ---
 name: dispatch
 argument-hint: "[<name> | dispatch/<name>/ | dispatch/<name>/dispatch.yaml | <spec-file> ]"
-description: Orchestrate parallel subagent execution. Smart input resolution - provide a name, directory, yaml file, or spec file. No argument runs the latest dispatch.
+description: Orchestrate parallel subagent task runs. Smart input resolution - provide a name, directory, yaml file, or spec file. No argument runs the latest dispatch.
 ---
 
 # Dispatch
 
-Orchestrate parallel subagent execution across a dependency graph. Fan out work to subagents, fan in results, validate, critique, verify, fix failures, commit, and repeat until done.
+Orchestrate parallel subagent task runs across a dependency graph. Fan out work to subagents, fan in results, validate, critique, verify, fix failures, commit, and repeat until done.
+
+## Terminology
+
+**Important:** Dispatch is a **skill** you load with `skill(name="dispatch")`, not a command to run.
+
+- **"Run"** or **"the run"** = One complete instance of dispatch orchestrating tasks
+- **"Loading dispatch"** = Starting the skill (not "invoking" or "executing")
+- **"Running tasks"** = When subagents perform work
+
+Avoid "execute dispatch" - use "run dispatch" or "load dispatch skill" instead.
 
 ## Input Resolution
 
@@ -19,8 +29,8 @@ Dispatch figures out what to run based on the argument:
 **Directory** (e.g., `dispatch/auth-fix/`) → Look for `dispatch.yaml` inside
 
 **File** → Check filename:
-- Ends with `dispatch.yaml` → Execute it
-- Anything else → Treat as spec, plan first, then execute
+- Ends with `dispatch.yaml` → Run it
+- Anything else → Treat as spec, plan first, then run
 
 **On checkpoint decline (when planning from spec):**
 - Planning artifacts remain in `dispatch/<run-name>/` for review
@@ -28,7 +38,7 @@ Dispatch figures out what to run based on the argument:
 
 ## Phase 1: Planning
 
-This phase runs when dispatch is invoked with a spec.md file as input. The spec should be complete and approved before dispatch is called.
+This phase runs when dispatch is loaded with a spec.md file as input. The spec should be complete and approved before dispatch is called.
 
 **Prerequisites:**
 - Spec file exists with complete requirements
@@ -145,7 +155,7 @@ Commit strategy rationale:
 [Explain why per-task vs grouped, referencing debuggability vs history cleanliness]
 ```
 
-Present this verification to the user BEFORE presenting the full dispatch plan. This ensures quality requirements are addressed proactively, not discovered during execution.
+Present this verification to the user BEFORE presenting the full dispatch plan. This ensures quality requirements are addressed proactively, not discovered during the run.
 
 **Why this matters:**
 
@@ -181,7 +191,7 @@ The `<run-name>` should be a short kebab-case description of the goal (e.g., `mi
 
 ### Task directory naming
 
-Task directories are named so a human scanning the directory can immediately understand execution order and purpose. The format is:
+Task directories are named so a human scanning the directory can immediately understand run order and purpose. The format is:
 
 ```
 <level><sequence>-<short_description>
@@ -217,7 +227,7 @@ This naming:
 - The `-fix<n>-` segment clearly marks it as a fix, not a planned task
 - Does not pollute the level numbering of planned tasks
 
-Each task directory is the subagent's scratchpad. It reads its plan from there, does its work, and writes its results there. After execution, a task directory looks like:
+Each task directory is the subagent's scratchpad. It reads its plan from there, does its work, and writes its results there. After running, a task directory looks like:
 
 ```
 1a-extract_auth_module/
@@ -314,7 +324,7 @@ The repository root is the nearest ancestor directory containing `.git`. The orc
 | `depends-on` | yes | Task IDs that must reach `completed` before this task starts (empty list if none). Exception: a fix task may proceed when the specific dependency it fixes is `fixing` -- see Step 1 for the precise rule. |
 | `receives` | no | Task IDs whose `output.yaml` to inject as context. Defaults to `depends-on`. Must be a subset of `depends-on`. Use to narrow injection when a task depends on many upstream tasks but only needs context from some. |
 | `fixes` | no | The task ID (or list of task IDs) this fix task is correcting. Only present on fix tasks. Used by the execution engine to transition each referenced original task from `fixing` to `completed` when the fix succeeds. Always references original planned tasks, not previous fix tasks. |
-| `status` | yes | Current execution status |
+| `status` | yes | Current run status |
 | `critique` | no | Per-task critique config; overrides the global `critique` setting |
 | `commit-group` | no | Group name for the `grouped` commit strategy. Fix tasks inherit this from the task they fix. |
 
@@ -323,7 +333,7 @@ The repository root is the nearest ancestor directory containing `.git`. The orc
 | Status | Meaning |
 |---|---|
 | `pending` | Not yet ready to dispatch (dependencies incomplete) |
-| `dispatched` | Currently being executed by a subagent |
+| `dispatched` | Currently being run by a subagent |
 | `completed` | Finished successfully (`output.yaml` confirms, and critique passed if enabled) |
 | `failed` | Failed after dispatch (`output.yaml` reports failure or is missing) |
 | `fixing` | A fix task has been created for this task. The task ran and produced output, but that output needs correction. `fixing` satisfies `depends-on` only for fix tasks that target this specific task via `fixes` (see Step 1 for the precise rule). Regular downstream tasks must wait for `completed`. The execution engine transitions this to `completed` when a fix task with this task in its `fixes` field succeeds. |
@@ -521,7 +531,7 @@ Or `deviations: []` if you only examined planned files.)
 
 ## Phase 2.5: Plan Critique
 
-After creating the dispatch.yaml and all plan.md files, run a quality critique on the plan itself before presenting to the user. This catches planning gaps, missing requirements, and structural issues before execution begins.
+After creating the dispatch.yaml and all plan.md files, run a quality critique on the plan itself before presenting to the user. This catches planning gaps, missing requirements, and structural issues before tasks start.
 
 **When to run:** Only on initial dispatch creation (not when resuming). Runs after Phase 2 completes and before Phase 3 validation.
 
@@ -606,11 +616,11 @@ Keep `plan-critique.yaml` as dispatch history for audit trail. Do not delete aft
 
 ## Phase 3: Plan Validation
 
-Before executing any tasks, validate the plan for correctness and completeness. Do not blindly trust that a plan is ready to run.
+Before running any tasks, validate the plan for correctness and completeness. Do not blindly trust that a plan is ready to run.
 
 ### Empty manifest
 
-If the manifest contains zero tasks, the run transitions directly to `completed` after validation. No execution, verification, or commit phases are needed. Report this to the user.
+If the manifest contains zero tasks, the run transitions directly to `completed` after validation. No running, verification, or commit phases are needed. Report this to the user.
 
 ### Structural integrity
 
@@ -660,7 +670,7 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 
 | Outcome | Action |
 |---|---|
-| **Valid** | Proceed to execution. Report validation results to user. |
+| **Valid** | Proceed to running tasks. Report validation results to user. |
 | **Warnings** | Present warnings (e.g., "tasks A and B both modify `config.ts` but are not sequenced"). Ask whether to proceed or adjust. |
 | **Blocking issues** | Present issues (e.g., "circular dependency between X and Y", "task Z references non-existent file"). Do not proceed until resolved. |
 
@@ -670,7 +680,7 @@ On resume, re-validate the remaining (non-completed) portion of the DAG before c
 
 ## Checkpoint: Validation, Presentation, and Confirmation
 
-This is the convergence point for both input types (existing dispatch.yaml or new spec.md). All flows pass through here before execution begins.
+This is the convergence point for both input types (existing dispatch.yaml or new spec.md). All flows pass through here before tasks start.
 
 **Prerequisites:**
 - Phase 2.5 (Plan Critique) completed with verdict `accepted`
@@ -714,7 +724,7 @@ Pending/Failed Tasks:
 
 Ready to Resume: <yes/no> (based on ready set availability)
 
-Proceed with execution? (yes/no)
+Proceed with the run? (yes/no)
 ```
 
 **For New Dispatch (spec.md input):**
@@ -750,7 +760,7 @@ Commit Strategy: <per-task|grouped|single>
 
 Dispatch files created at: dispatch/<run-name>/
 
-Proceed with execution? (yes/no)
+Proceed with the run? (yes/no)
 ```
 
 ### Step 3: Confirm
@@ -763,7 +773,7 @@ Wait for explicit user confirmation before proceeding.
 - Execution proceeds linearly without returning to planning
 
 **If user declines ("no"):**
-- Exit cleanly without starting execution
+- Exit cleanly without starting the run
 - Dispatch files remain intact for manual review
 - User can edit files directly, then re-run with: `dispatch dispatch/<run-name>/dispatch.yaml`
 
@@ -772,14 +782,14 @@ The skill does NOT modify the plan interactively. The user must:
 1. Edit the relevant files (`dispatch.yaml`, `plan.md` files)
 2. Re-run with: `dispatch dispatch/<run-name>/dispatch.yaml`
 
-This maintains the non-reentrant property - once a plan is confirmed and execution begins, it proceeds to completion.
+This maintains the non-reentrant property - once a plan is confirmed and the run begins, it proceeds to completion.
 
 ### Why This Checkpoint Matters
 
-1. **Visibility**: User sees exactly what will be executed before it starts
+1. **Visibility**: User sees exactly what will run before it starts
 2. **Control**: User can abort or modify before any changes are made to the codebase
-3. **Safety**: No accidental execution of incomplete or incorrect plans
-4. **Debugging**: User can review the plan offline before committing to execution
+3. **Safety**: No accidental running of incomplete or incorrect plans
+4. **Debugging**: User can review the plan offline before committing to the run
 
 ## Phase 4: Execution Engine
 
@@ -1201,7 +1211,7 @@ The fix loop handles regressions detected in Phase 5:
 3. **Create fix tasks**: See Fix Task Creation section
 
 4. **Execute fixes**: Re-enter Phase 4 (Steps 1-5)
-   - Fix tasks execute normally
+   - Fix tasks run normally
    - Include critique if enabled
    - Step 3c transitions originals to `completed` when fixes succeed
 
@@ -1285,9 +1295,9 @@ After all verification passes, orchestrate commits for the changes.
 
 | Mode | Behavior |
 |---|---|
-| `ask-once` (default) | Present the full commit plan (all commits with files and messages). User approves or adjusts, then all commits execute. |
+| `ask-once` (default) | Present the full commit plan (all commits with files and messages). User approves or adjusts, then all commits are created. |
 | `ask-each` | Present each commit individually for approval. User can approve, edit the message, or skip. |
-| `auto` | Commits execute without user interaction. Verification already passed. |
+| `auto` | Commits are created without user interaction. Verification already passed. |
 
 ### Commit phase steps
 
@@ -1315,7 +1325,7 @@ When all tasks are completed, verification passes, and commits are done:
 
 1. Update `dispatch.yaml` status to `completed`
 2. Report a summary:
-   - Total tasks executed
+   - Total tasks run
    - Fix rounds needed (if any)
    - Critique rounds (if any)
    - Files modified across all tasks
@@ -1329,7 +1339,7 @@ This section describes how to resume a dispatch run. **Note:** This logic is inv
 
 ### When `$ARGUMENTS` points to an existing `dispatch.yaml`:
 
-**First, execute existing dispatch flow:**
+**First, run existing dispatch flow:**
 1. Load and validate the dispatch
 2. Analyze current state
 3. Present status to user
@@ -1352,7 +1362,7 @@ This section describes how to resume a dispatch run. **Note:** This logic is inv
 - Present at Checkpoint
 - Ask for approval to proceed
 - If approved: set status to `in-progress`, proceed to Phase 4
-- This handles interruption between plan creation and execution
+- This handles interruption between plan creation and the run
 
 **If status is `in-progress`:**
 1. Re-validate remaining DAG (Phase 3)
