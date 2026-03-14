@@ -64,7 +64,7 @@ Commits should read like a story, allowing others and future-you to understand w
 - **Blank line**: Required between summary and body (if body exists)
 - **Body lines**: Max 72 characters each
 
-Summary lines should be English sentences with no abbreviations, no markup (e.g. feat, chore), and not end with punctuation.
+Some projects use a "Conventional Commits" prefix format (e.g. `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`). Do not use this style. Summary lines should be plain English sentences with no abbreviations, no prefixes, and should not end with punctuation.
 
 **Good examples:**
 
