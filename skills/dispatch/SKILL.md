@@ -519,6 +519,62 @@ deviations:
 Or `deviations: []` if you only examined planned files.)
 ```
 
+## Phase 2.5: Plan Critique
+
+After creating the dispatch.yaml and all plan.md files, run a quality critique on the plan itself before presenting to the user. This catches planning gaps, missing requirements, and structural issues before execution begins.
+
+**When to run:** Only on initial dispatch creation (not when resuming). Runs after Phase 2 completes and before Phase 3 validation.
+
+**Process:**
+
+1. **Spawn critique agent** with:
+   - The dispatch.yaml manifest
+   - All task plan.md files
+   - The original spec file (if planning from spec)
+
+2. **Critique scope:**
+   - **Manifest level:** All spec requirements covered? DAG valid? Agent types appropriate? Dependencies correct?
+   - **Task level:** Objectives clear? Files identified? Constraints realistic? Verification appropriate?
+   - **Cross-task level:** No conflicting constraints? Shared resources properly sequenced?
+
+3. **Critique output:** Writes `plan-critique.yaml` to the dispatch directory:
+
+```yaml
+verdict: accepted | needs-work
+iteration: 1
+timestamp: YYYY-MM-DDTHH:MM:SS
+issues:
+  - severity: blocking | warning | nit
+    component: dispatch.yaml | 1a-task_name
+    description: "Specific issue found"
+    suggestion: "How to fix it"
+notes: "Overall assessment"
+```
+
+**Iteration policy (same as execution fix depth):**
+
+- **Iterations 1-2:** Calling agent fixes issues (in-place edits to yaml/plan files), re-runs critique
+- **Iteration 3:** Warn that plan is proving difficult to validate
+- **Iteration 4+:** Ask user via question tool:
+  - "Proceed anyway (accept plan with known issues)"
+  - "Consult greybeard for architectural guidance"
+  - "Abort dispatch and start over"
+  - "Manual review needed"
+
+**Escalation to greybeard:**
+
+If calling agent cannot resolve critique issues, consult greybeard for architectural guidance on how to fix. This is a Task tool consultation, not automatic.
+
+**Blocking behavior:**
+
+- Plan critique is **mandatory** - no bypass option
+- Must pass (verdict: accepted) before proceeding to Phase 3
+- If critique agent crashes or produces invalid output: Block and ask user for decision
+
+**Artifact persistence:**
+
+Keep `plan-critique.yaml` as dispatch history for audit trail. Do not delete after successful validation.
+
 ## Phase 3: Plan Validation
 
 Before executing any tasks, validate the plan for correctness and completeness. Do not blindly trust that a plan is ready to run.
@@ -586,6 +642,8 @@ On resume, re-validate the remaining (non-completed) portion of the DAG before c
 ## Checkpoint: Validation, Presentation, and Confirmation
 
 This is the convergence point for both input types (existing dispatch.yaml or new spec.md). All flows pass through here before execution begins.
+
+**Prerequisites:** Phase 2.5 (Plan Critique) must be completed with verdict `accepted` before reaching the Checkpoint. For new dispatches created from spec, this ensures the plan has been reviewed for completeness and correctness.
 
 ### Step 1: Validate
 
@@ -1014,6 +1072,8 @@ If all tasks have status `failed` (or a mix of `failed` and `fixing` with no pen
 
 ## Escalation
 
+### Task Fix Escalation (Execution Phase)
+
 The orchestrator tracks escalation by counting the fix depth for a given original task: the number of tasks in the manifest whose `fixes` field references that original task's ID. For example, if `1a-fix1` and `1a-fix2` both have `fixes: 1a-extract_auth_module`, the fix depth is 2. When a fix task references multiple originals via `fixes`, escalation uses the maximum fix depth across all referenced originals.
 
 - Depth 1-2: Fix silently, report progress in manifest
@@ -1023,6 +1083,20 @@ The orchestrator tracks escalation by counting the fix depth for a given origina
 This escalation policy applies to both verification failures and critique rejections. The counter is shared -- if critique produced fix1 and fix2, and then verification produces fix3, the user is notified at fix3 (depth 3) regardless of which mechanism created the fixes.
 
 There is no hard retry limit. Escalation ensures the user is involved when things are not converging. Note: when a fix task is itself rejected by critique and a new fix task is created, both contribute to the fix depth. This is conservative -- it may over-count relative to the number of distinct fix attempts, but ensures the user is involved sooner rather than later.
+
+### Plan Critique Escalation (Pre-Execution)
+
+Plan critique iterations follow the same escalation pattern:
+
+- **Iterations 1-2:** Calling agent fixes issues in-place, re-runs critique
+- **Iteration 3:** Notify user that plan validation is proving difficult
+- **Iteration 4+:** Ask user for guidance via question tool:
+  - Proceed anyway (accept plan with known issues)
+  - Consult greybeard for architectural guidance
+  - Abort dispatch and start over
+  - Manual review needed
+
+**Note:** If the critique agent crashes or produces invalid output at any iteration, block immediately and ask user for decision. Do not proceed with invalid critique results.
 
 ## Phase 5: Full Build Verification
 
