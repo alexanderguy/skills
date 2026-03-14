@@ -764,7 +764,7 @@ Proceed with the run? (yes/no)
 
 ### Step 3: Confirm
 
-Wait for explicit user confirmation before proceeding.
+Use the question tool to ask the user whether to proceed. The question should offer "Proceed" and "Abort" as options.
 
 **If user confirms ("yes"):**
 - Update `dispatch.yaml` status to `in-progress`
