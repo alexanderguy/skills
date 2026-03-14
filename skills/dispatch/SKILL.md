@@ -263,7 +263,6 @@ critique:
 commits:
   strategy: per-task         # per-task | single | grouped
   approval: ask-once         # ask-once | ask-each | auto
-  prefix: ""                 # optional prefix for commit messages
   message-source: objective  # objective (from plan.md) | notes (from output.yaml)
 
 results:                       # populated by Phase 6; empty until then
@@ -1308,10 +1307,9 @@ After all verification passes, orchestrate commits for the changes.
    - `grouped`: merge `files-modified` across tasks in the same group
    - `single`: merge all `files-modified` into one commit
 4. Generate commit messages:
-   - `message-source: objective`: derive from the task's plan.md objective
-   - `message-source: notes`: derive from the task's output.yaml notes
-   - Apply `prefix` if configured
-   - For `grouped` commits, synthesize the objectives/notes of all tasks in the group into a single message. For `single` commits, derive the message from the `goal` field in the manifest, using `message-source` as guidance for tone.
+    - `message-source: objective`: derive from the task's plan.md objective
+    - `message-source: notes`: derive from the task's output.yaml notes
+    - For `grouped` commits, synthesize the objectives/notes of all tasks in the group into a single message. For `single` commits, derive the message from the `goal` field in the manifest, using `message-source` as guidance for tone.
 5. Apply approval mode:
    - `ask-once`: present full commit plan, wait for approval
    - `ask-each`: present each commit, wait for approval
