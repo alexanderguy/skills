@@ -766,12 +766,12 @@ Proceed with the run? (yes/no)
 
 Use the question tool to ask the user whether to proceed. The question should offer "Proceed" and "Abort" as options.
 
-**If user confirms ("yes"):**
+**If user selects "Proceed":**
 - Update `dispatch.yaml` status to `in-progress`
 - Proceed to Phase 4 (Execution Engine)
 - Execution proceeds linearly without returning to planning
 
-**If user declines ("no"):**
+**If user selects "Abort":**
 - Exit cleanly without starting the run
 - Dispatch files remain intact for manual review
 - User can edit files directly, then re-run with: `dispatch dispatch/<run-name>/dispatch.yaml`
