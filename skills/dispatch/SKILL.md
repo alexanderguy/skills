@@ -545,11 +545,33 @@ iteration: 1
 timestamp: YYYY-MM-DDTHH:MM:SS
 issues:
   - severity: blocking | warning | nit
-    component: dispatch.yaml | 1a-task_name
+    type: spec | plan  # NEW: distinguishes source of issue
+    component: dispatch.yaml | 1a-task_name | specs/...
     description: "Specific issue found"
     suggestion: "How to fix it"
 notes: "Overall assessment"
 ```
+
+### Spec Issues vs Plan Issues
+
+Critique must distinguish between:
+- **Spec issues:** Requirements missing, conflicting goals, unclear scope, incomplete constraints
+- **Plan issues:** Task breakdown problems, dependency errors, verification gaps
+
+**Spec issue identification:**
+When critique finds a spec issue, it tags it in plan-critique.yaml with `type: spec`.
+
+### Spec Issue Resolution Workflow
+
+When spec issues are found (any `type: spec` issues with severity blocking or warning):
+
+1. **Pause planning** - Do not continue with plan fixes until spec is resolved
+2. **Present to user:** "Critique found N spec issues that need resolution before planning can continue"
+3. **User updates spec** - User edits `specs/<name>-spec.md` directly to address the issues
+4. **Reset iteration counter** - Fresh start after spec fix
+5. **Restart Phase 1** - Re-plan from updated spec
+
+**Note:** Spec issues take precedence over plan issues. Fix spec first, then plan.
 
 **Iteration policy (same as execution fix depth):**
 
@@ -560,6 +582,13 @@ notes: "Overall assessment"
   - "Consult greybeard for architectural guidance"
   - "Abort dispatch and start over"
   - "Manual review needed"
+
+**Spec Issue Exception:**
+When spec issues are found and the user updates the spec:
+- Reset iteration counter to 0
+- Restart Phase 1 with updated spec
+- This ensures clean planning from corrected requirements
+- Spec fixes take precedence over iteration limits
 
 **Escalation to greybeard:**
 
@@ -643,7 +672,12 @@ On resume, re-validate the remaining (non-completed) portion of the DAG before c
 
 This is the convergence point for both input types (existing dispatch.yaml or new spec.md). All flows pass through here before execution begins.
 
-**Prerequisites:** Phase 2.5 (Plan Critique) must be completed with verdict `accepted` before reaching the Checkpoint. For new dispatches created from spec, this ensures the plan has been reviewed for completeness and correctness.
+**Prerequisites:**
+- Phase 2.5 (Plan Critique) completed with verdict `accepted`
+- No unresolved `type: spec` issues (spec must be solid before planning)
+- Plan reflects current spec state
+
+For new dispatches created from spec, this ensures both the spec and plan have been reviewed for completeness and correctness.
 
 ### Step 1: Validate
 
@@ -1095,6 +1129,13 @@ Plan critique iterations follow the same escalation pattern:
   - Consult greybeard for architectural guidance
   - Abort dispatch and start over
   - Manual review needed
+
+**Spec Issue Exception:**
+When spec issues (`type: spec`) are found:
+- Pause and have user update the spec directly
+- Reset iteration counter to 0 after spec update
+- Restart Phase 1 with updated spec
+- This takes precedence over the iteration escalation above
 
 **Note:** If the critique agent crashes or produces invalid output at any iteration, block immediately and ask user for decision. Do not proceed with invalid critique results.
 
