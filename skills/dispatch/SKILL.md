@@ -1,70 +1,40 @@
 ---
 name: dispatch
-argument-hint: [dispatch/<name>/dispatch.yaml]
-description: Orchestrate parallel subagent execution with DAG scheduling, fan-out/fan-in, and iterative fix loops. Run without arguments to create a new dispatch (uses interview skill to gather requirements).
+argument-hint: "[<name> | dispatch/<name>/ | dispatch/<name>/dispatch.yaml | <spec-file> ]"
+description: Orchestrate parallel subagent execution. Smart input resolution - provide a name, directory, yaml file, or spec file. No argument runs the latest dispatch.
 ---
 
 # Dispatch
 
 Orchestrate parallel subagent execution across a dependency graph. Fan out work to subagents, fan in results, validate, critique, verify, fix failures, commit, and repeat until done.
 
-## Initialization
+## Input Resolution
 
-The dispatch skill operates in two non-reentrant modes. Both modes converge at a checkpoint where the plan is presented and explicit user confirmation is required before execution begins.
+Dispatch figures out what to run based on the argument:
 
-### Mode 1: With Argument (Existing Dispatch)
+**No argument** → Run latest dispatch (newest `dispatch/<name>/` directory by creation time)
 
-Use this mode to validate and continue an existing dispatch run.
+**Just a name** (e.g., "auth-fix") → Look for `dispatch/<name>/dispatch.yaml`
 
-**When to use:** `$ARGUMENTS` points to an existing `dispatch/<name>/dispatch.yaml`
+**Directory** (e.g., `dispatch/auth-fix/`) → Look for `dispatch.yaml` inside
 
-**Flow:**
-1. Load the existing `dispatch.yaml`
-2. Analyze current state (completed, pending, failed tasks)
-3. Proceed to **Checkpoint** (see below)
+**File** → Check filename:
+- Ends with `dispatch.yaml` → Execute it
+- Anything else → Treat as spec, plan first, then execute
 
-### Mode 2: Without Argument (New Dispatch)
-
-Use this mode to create a new dispatch from scratch.
-
-**When to use:** `$ARGUMENTS` is empty
-
-**Flow:**
-1. **Gather Requirements** (invoke interview skill)
-   - Run comprehensive interview to understand the goal
-   - Save spec to `specs/<run-name>-spec.md`
-   - Derive `<run-name>` from the goal (kebab-case)
-
-2. **Build Dispatch Plan** (Phase 1 Planning)
-   - Use `explore` agents to understand codebase scope
-   - Break goal into discrete tasks
-   - Identify dependencies (DAG edges)
-   - Select agent types for each task
-   - Add verification steps
-   - Choose commit strategy
-   - Decide which tasks need critique
-
-3. **Create Directory Structure** (Phase 2)
-   - Create `dispatch/<run-name>/` directory
-   - Write `dispatch.yaml` manifest
-   - Write `plan.md` files for each task
-
-4. Proceed to **Checkpoint** (see below for validation, presentation, and confirmation)
-
-**On decline at Checkpoint:**
-- Dispatch files remain in `dispatch/<run-name>/` for manual review
-- Spec remains in `specs/<run-name>-spec.md`
-- User can re-run later with: `dispatch dispatch/<run-name>/dispatch.yaml`
+**On checkpoint decline (when planning from spec):**
+- Planning artifacts remain in `dispatch/<run-name>/` for review
+- Can re-run later with: `dispatch dispatch/<run-name>/dispatch.yaml`
 
 ## Phase 1: Planning
 
-This phase is entered only in **Mode 2** (without argument) after the interview skill has created a spec file at `specs/<run-name>-spec.md`.
+This phase runs when dispatch is invoked with a spec.md file as input. The spec should be complete and approved before dispatch is called.
 
 **Prerequisites:**
 - Spec file exists with complete requirements
 - User has confirmed the spec is ready for implementation
 
-**Input:** The spec file from `specs/<run-name>-spec.md`
+**Input:** The spec file at the provided path
 
 0. **Validate requirements completeness:**
    - Confirm the goal is sufficiently specified to create implementable tasks
@@ -615,7 +585,7 @@ On resume, re-validate the remaining (non-completed) portion of the DAG before c
 
 ## Checkpoint: Validation, Presentation, and Confirmation
 
-This is the convergence point for both **Mode 1** (existing dispatch) and **Mode 2** (new dispatch). All flows pass through here before execution begins.
+This is the convergence point for both input types (existing dispatch.yaml or new spec.md). All flows pass through here before execution begins.
 
 ### Step 1: Validate
 
@@ -635,7 +605,7 @@ Run Phase 3 validation on the dispatch:
 
 Display the current state to the user before requesting confirmation.
 
-**For Mode 1 (Existing Dispatch):**
+**For Existing Dispatch (dispatch.yaml input):**
 ```
 Dispatch: <run-name>
 Status: <pending|in-progress>
@@ -655,7 +625,7 @@ Ready to Resume: <yes/no> (based on ready set availability)
 Proceed with execution? (yes/no)
 ```
 
-**For Mode 2 (New Dispatch):**
+**For New Dispatch (spec.md input):**
 ```
 New Dispatch: <run-name>
 Goal: <goal-description>
@@ -1240,11 +1210,11 @@ When all tasks are completed, verification passes, and commits are done:
 
 ## Resumability
 
-This section describes how to resume a dispatch run. **Note:** This logic is invoked AFTER the Checkpoint (presentation + confirmation) in Mode 1.
+This section describes how to resume a dispatch run. **Note:** This logic is invoked AFTER the Checkpoint (presentation + confirmation) when resuming from an existing dispatch.yaml.
 
 ### When `$ARGUMENTS` points to an existing `dispatch.yaml`:
 
-**First, execute Mode 1 flow:**
+**First, execute existing dispatch flow:**
 1. Load and validate the dispatch
 2. Analyze current state
 3. Present status to user
