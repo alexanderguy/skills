@@ -528,6 +528,16 @@ deviations:
 Or `deviations: []` if you only examined planned files.)
 ```
 
+### Mandatory boilerplate sections
+
+The following sections from the template above are **protocol sections** — they do not vary per task. You MUST copy them verbatim into every `plan.md` you create. Do not paraphrase, abbreviate, or omit them:
+
+- **Deviation Reporting** (the full section including the yaml block, severity levels, and consequence warning)
+- **Subagent Responsibility: Read and Understand the Plan** (the full section)
+- **Output Contract** (the full section including the example yaml)
+
+These sections define the communication protocol between subagents and the orchestrator. If they are missing or altered, subagents will produce output that violates the contract (e.g., writing `status: success` instead of `status: completed`), causing silent failures or incorrect orchestration behavior.
+
 ## Phase 2.5: Plan Critique
 
 After creating the dispatch.yaml and all plan.md files, run a quality critique on the plan itself before presenting to the user. This catches planning gaps, missing requirements, and structural issues before tasks start.
