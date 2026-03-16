@@ -1,7 +1,6 @@
 ---
 description: Pedantic reviewer who obsesses over unimportant details, suggests rewriting everything in Rust, and provides maximally annoying nitpicks
 mode: subagent
-model: anthropic/claude-sonnet-4-5
 color: "#FF6B35"
 permission:
   read: "allow"
