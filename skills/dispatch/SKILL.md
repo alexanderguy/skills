@@ -233,9 +233,25 @@ Each task directory is the subagent's scratchpad. It reads its plan from there, 
 1a-extract_auth_module/
   plan.md              # input: instructions for the subagent
   output.yaml          # output: structured results (source of truth)
-  critique.yaml        # output: critique verdict (if critique enabled)
   ...                  # scratch: any other files the subagent creates
 ```
+
+Gate critique verdicts are written at the run level, not the task level:
+
+```
+dispatch/<run-name>/
+  dispatch.yaml
+  level1-gate-critique.yaml         # gate verdict for level 1 planned tasks
+  level2-gate-critique.yaml         # gate verdict for level 2 planned tasks
+  level1-fix-round1-gate-critique.yaml  # gate for first round of fix tasks at level 1
+  level1-fix-round2-gate-critique.yaml  # gate for second round (if round 1 fix tasks fail)
+  1a-extract_auth_module/
+    plan.md
+    output.yaml
+    ...
+```
+
+A "fix round" for a level is the set of fix tasks that become ready at the same time. Round 1 is the first batch of fix tasks for that level; round 2 is any fix tasks spawned because round 1 fix tasks were themselves rejected; and so on. The round number equals 1 plus the count of existing `level<N>-fix-round*-gate-critique.yaml` files in the dispatch run directory for that level. On resume, stale or malformed gate files from a previously aborted run may inflate the counter by one, causing a gap in the sequence (e.g., round 3 instead of round 2). This is cosmetically imperfect but has no behavioral consequence — gate file names are informational artifacts only and are not used by the execution engine for logic.
 
 ### Manifest format
 
@@ -258,7 +274,7 @@ verify:
 
 critique:
   enabled: true              # global default; tasks can override
-  agent: critique            # defaults to critique; must be an agent that can write critique.yaml
+  agent: critique            # defaults to critique; must be an agent that can write gate-critique.yaml
 
 commits:
   strategy: per-task         # per-task | single | grouped
@@ -286,7 +302,7 @@ tasks:
       agent: critique        # defaults to critique
       prompt: |
         Custom critique instructions for this task.
-      validate-fix:          # optional: enable mutation testing validation
+      validate-fix:          # optional: enable mutation testing validation; requires per-task commit strategy; most reliable when no downstream task re-touches the same files
         enabled: false       # opt-in; must be explicitly enabled
         test-command: ""     # command to run test(s) for validation
     commit-group: ""         # optional; used with 'grouped' commit strategy
@@ -857,7 +873,7 @@ Dispatch all tasks in the batch as parallel Task tool calls in a single message.
 Collect results from all dispatched tasks:
 
 1. **Check `output.yaml`** (source of truth):
-   - Exists with `status: completed`: proceed to build verification (Step 3a)
+   - Exists with `status: completed`: proceed to self-report check (Step 3a)
    - Exists with `status: failed`: mark task `failed` in manifest
    - Does not exist: mark task `failed` (contract violation)
 
@@ -893,151 +909,192 @@ If evidence is missing or empty:
 - Skip critique
 
 If evidence exists and looks reasonable:
-- Proceed to Step 3b (Critique) if critique is enabled for this task
-- Mark task `completed` if critique is disabled
+- Hold the task in an internal `self-report-passed` state (in-memory only; not written to `dispatch.yaml`; cleared once Step 3b finishes for the level, whether the gate ran, was skipped, or failed — all tasks exit `self-report-passed` by transitioning to `completed` or `fixing` before Step 3b returns)
+- Once all tasks in the current level have reached `self-report-passed`, `failed`, or `fixing`, proceed to Step 3b (which determines per-task critique eligibility and runs the gate if needed)
 
-### Step 3b: Critique (if enabled)
+### Step 3b: Level Gate Critique (if enabled)
 
-If critique is enabled for this task (via global config or per-task override), do not mark the task `completed` yet. Instead:
+Once all tasks in the current level have passed Step 3a (or been marked `failed`/`fixing`), determine which tasks need critique. Per-task setting takes precedence over global. The global `critique.enabled` defaults to `true` when the `critique.enabled` key is absent — whether the entire `critique` block is omitted or the block exists but lacks the `enabled` key.
 
-1. Spawn a critique agent for the task (using the `agent` type from the critique config, defaulting to `critique`). The critique agent receives:
-   - The original `plan.md` (what was asked for)
-   - The `output.yaml` (what the doer claims it did)
-   - Access to read the actual file changes in the codebase
-   - **Access to read evidence files** in the task directory (verification.log, test-results.json, manual-evidence.log)
-   - The repository root and task directory paths
-   - The custom `critique.prompt` if provided, otherwise the default critique prompt (below)
-2. The critique agent writes `critique.yaml` to the task directory
+| Global `critique.enabled` | Per-task `critique.enabled` | Needs critique? |
+|---|---|---|
+| `true` (or key absent) | absent | yes |
+| `true` (or key absent) | `true` | yes |
+| `true` (or key absent) | `false` | no |
+| `false` | absent | no |
+| `false` | `true` | yes |
+| `false` | `false` | no |
+
+Tasks that do not need critique are marked `completed` immediately. Tasks that need critique form the gate input set. If the gate input set is empty, skip the gate entirely.
+
+The gate input set is also restricted to tasks in `self-report-passed` state — tasks already marked `failed` or `fixing` (due to Step 3a evidence failures) are excluded. They are not re-evaluated by the gate.
+
+If the gate input set is non-empty, spawn a single gate critique agent:
+
+1. Spawn one critique agent. Agent type is selected as follows:
+   - If all gate-input tasks share the same per-task `critique.agent` type → use that type
+   - Otherwise (tasks have different per-task agent types, or no per-task override) → use the global `critique.agent`, defaulting to `critique`
+   - Note: when tasks have heterogeneous per-task agent types, both custom preferences are discarded in favor of the global default. If this is unacceptable for a level, the tasks should be split into separate levels or given a shared per-task agent type.
+
+   The critique agent receives:
+   - For each task in the gate input set: its `plan.md`, its `output.yaml`, and the evidence files listed in its `verification-summary`
+   - The repository root and task directory paths for each task
+   - A prompt selected by applying these rules in order:
+     1. If all gate-input tasks have a per-task `critique.prompt` and they are all identical → use that prompt
+     2. Otherwise (some tasks have no per-task prompt, or prompts differ) → use the global `critique.prompt` if present
+     3. Otherwise → if any gate-input task has `validate-fix.enabled: true`, use the validation gate prompt
+     4. Otherwise → if all gate-input tasks are `explore` agents, use the explore gate prompt; else use the standard gate prompt
+     - Same trade-off as agent type: heterogeneous or partial per-task prompts are discarded in favor of the global default
+     - **Warning:** If a per-task or global `critique.prompt` is selected (rules 1 or 2) and any gate-input task has `validate-fix.enabled: true`, the custom prompt will be used as-is — mutation testing instructions are not automatically injected. Log a warning that validate-fix tasks are present but the custom prompt was used; mutation testing will not run unless the custom prompt includes those instructions.
+2. The critique agent writes one `gate-critique.yaml` to `dispatch/<run-name>/`. For planned tasks the file is named `level<N>-gate-critique.yaml` (e.g., `level1-gate-critique.yaml`). For fix task gates it is named `level<N>-fix-round<R>-gate-critique.yaml` where R is the fix round number (see directory structure above).
 3. Based on the verdict:
-   - `accepted`: mark the task `completed`
-   - `needs-work`: mark the task `fixing`, create a fix task (see Fix Task Creation), and add it to the manifest
+   - Tasks with no blocking issues → mark `completed`
+   - Tasks referenced by blocking issues → mark `fixing`, create a fix task per affected task (see Fix Task Creation), add to manifest
 
-If the critique agent fails to produce a valid `critique.yaml` (crashes, times out, or writes a malformed file), treat the critique as `accepted` and mark the task `completed`. Log a warning that critique was skipped due to infrastructure failure. The doer's work should not be blocked by a critique agent malfunction.
+Fix tasks for a level form their own mini-gate: when they complete Step 3a, a new gate critique runs scoped to just the fix task set (same per-task critique enablement rules apply).
+
+**Single-task levels** follow the same path. When a level has only one task, the gate input set contains that one task and the gate runs as normal. This degenerates to the same behavior as the old per-task model, just with consistent mechanics.
+
+If the critique agent fails to produce a valid `gate-critique.yaml` (crashes, times out, or writes a malformed file), treat the gate as `accepted` for all tasks in the gate input set and mark them `completed`. Log a warning that critique was skipped due to infrastructure failure.
 
 Critique agents count toward `max-parallel`.
 
-If critique is not enabled for the task, mark it `completed` immediately.
-
 **Handling validation results:**
 
-If `validate-fix` was enabled and the critique agent performed mutation testing:
-1. Check `validation.mutation-test` in critique.yaml
-2. Verify without-fix.status is "failed" and with-fix.status is "passed"
-3. If validation failed, treat as a blocking issue (needs-work verdict)
-4. Evidence files (mutation-test-*.log) remain in task directory for reference
+If `validate-fix` was enabled for a task:
+1. Check whether `gate-critique.yaml` contains a `skipped-validation` entry where `task-id` matches the task. If present:
+   - `type: structural`: log the reason and treat the task as if mutation testing passed. Do not block.
+   - `type: anomaly`: log the reason as a **warning** to the operator and treat the task as if mutation testing passed. Do not block, but the operator should investigate why files span multiple commits or why files-modified is empty.
+2. Otherwise, check that `gate-critique.yaml` contains a `validation` list entry where `task-id` matches the task. If the entry is absent (and no `skipped-validation` entry exists), treat this as a blocking issue — mutation testing was required but not performed (likely because a custom prompt was used that does not include mutation testing instructions; see the warning in the prompt selection rules above)
+3. If the `validation` entry is present, check its `mutation-test` field: verify without-fix.status is "failed" and with-fix.status is "passed"
+4. If without-fix.status is not "failed" or with-fix.status is not "passed", treat as a blocking issue (needs-work) for that task
+5. Evidence files (mutation-test-*.log) remain in the task directory for reference
 
 **Handling new test files:**
 
-If critique.yaml contains a `new-tests` field:
-1. Add these files to the task's `files-modified` list in the manifest
-2. These files will be included when the task's commit is created
-3. This ensures critique-created tests are properly committed
+For each task being processed, find the entries in `gate-critique.yaml`'s `new-tests` list where `task-id` matches that task, then:
+1. Add each matched `file` to that task's `files-modified` list in its `output.yaml`
+2. They will be included when the task's commit is created
 
-For `explore` agents, critique works differently since there are no file changes to review. Instead, the critique agent verifies the explore agent's findings against the actual codebase:
+For `explore` agents (whether in a pure-explore level or mixed with other agent types), the gate critique verifies findings against the actual codebase rather than reviewing file changes. The gate agent independently checks the codebase to verify key claims from each explore task's output.yaml: file existence, pattern identification, function signatures, module structure, etc. For a `needs-work` verdict on an explore task, the fix task is an `explore` agent that re-investigates, receiving the critique issues as context. The orchestrator writes a new `output.yaml` on the fix task's behalf as usual for explore agents.
 
-1. Spawn a critique agent (using the `agent` type from the critique config, defaulting to `critique`) that receives:
-   - The original `plan.md` (what was asked)
-   - The `output.yaml` (the explore agent's findings, written by the orchestrator)
-   - The repository root and task directory paths
-   - The explore critique prompt (below) or a custom `critique.prompt` if provided
-2. The critique agent independently checks the codebase to verify key claims -- file existence, pattern identification, function signatures, module structure, etc.
-3. The critique agent writes `critique.yaml` to the task directory
-4. Based on the verdict:
-   - `accepted`: mark the task `completed`
-   - `needs-work`: mark the task `fixing`, create a fix task. The fix task is an `explore` agent that re-investigates, receiving the critique issues as context. The orchestrator writes a new `output.yaml` on the fix task's behalf as usual for explore agents.
-
-#### critique.yaml format
+#### gate-critique.yaml format
 
 ```yaml
+tasks: [1a-task, 1b-task]     # all task IDs in scope for this gate run
 verdict: accepted | needs-work
-validation:              # present only if validate-fix was enabled
-  mutation-test:
-    fix-commit: abc123   # commit SHA that was reverted for validation
-    without-fix:
-      status: failed     # expected: test should fail without fix
-      evidence-file: mutation-test-without-fix.log  # in task directory
-    with-fix:
-      status: passed     # expected: test should pass with fix
-      evidence-file: mutation-test-with-fix.log     # in task directory
-new-tests:               # files critique created that should be committed
-  - src/tests/range-field.spec.ts
 issues:
-  - severity: blocking | warning | nit
+  - task-id: 1b-task           # which task this issue belongs to
+    severity: blocking | warning | nit
     file: src/routes/users/create.ts
     description: "Error handler swallows the original error message"
+validation:                    # present only if validate-fix was enabled for a task
+  - task-id: 1a-task
+    mutation-test:
+      fix-commit: abc123
+      without-fix:
+        status: failed
+        evidence-file: mutation-test-without-fix.log
+      with-fix:
+        status: passed
+        evidence-file: mutation-test-with-fix.log
+skipped-validation:            # present only if validate-fix was enabled but mutation testing was skipped
+  - task-id: 1a-task
+    type: structural | anomaly   # structural = expected config incompatibility; anomaly = runtime detection failure
+    reason: "Commit strategy is not per-task; cannot identify fix commit to revert"
+new-tests:                     # files critique created that should be committed
+  - task-id: 1a-task
+    file: src/tests/range-field.spec.ts
 notes: |
   Overall approach is sound.
-  Two issues need addressing.
+  Task 1b has two issues that need addressing.
 ```
 
-Only `blocking` issues result in a `needs-work` verdict. Validation failures (test passes without fix or fails with fix) are blocking issues. Warnings and nits are recorded but do not block completion.
+Only `blocking` issues result in a `needs-work` verdict for the referenced task. Validation failures (test passes without fix or fails with fix) are blocking. Warnings and nits are recorded but do not block completion.
 
-The critique agent uses the `critique` agent type. The agent must be able to write `critique.yaml` to the task directory. The critique prompt instructs it only to review and report. If a critique agent modifies source files, treat this as a bug and discard those changes. To detect this, the orchestrator should snapshot modified files (via `git status` or equivalent) before dispatching the critique agent and revert any newly modified files outside the task directory afterward.
+The critique agent must not modify source files. If it does, treat this as a bug and discard those changes. To detect this, the orchestrator should snapshot modified files (via `git status` or equivalent) before dispatching the critique agent and revert any newly modified files outside the task directories afterward.
 
-#### Default critique prompt
+#### Default gate prompt
 
-When no custom `critique.prompt` is provided:
+When no custom `critique.prompt` is provided, no `validate-fix` tasks are present, and the level is not exclusively `explore` agents:
 
 ```
-You are reviewing the work of another agent. You have:
+You are reviewing the work of a group of agents that ran in parallel. You have,
+for each task in the level:
 
-1. The original plan (plan.md) describing what was asked
-2. The agent's self-reported output (output.yaml)
-3. The actual file changes in the codebase
-4. The verification evidence files in the task directory
+1. The task's plan.md (what was asked)
+2. The task's output.yaml (what the agent claims it did)
+3. The evidence files listed in the task's verification-summary
 
-Evaluate whether:
+For each non-explore task, evaluate whether:
 - The objective in plan.md was met
-- The files-modified list in output.yaml is accurate
-- The code changes are correct and complete
-- No unintended side effects were introduced
+- The files listed in files-modified actually exist on disk and match what
+  the plan described (check each file's contents against the plan's "Files to
+  Modify" section and the task's stated objective)
 - Constraints from the plan were respected
-- **Verification was actually performed:**
+- Verification was actually performed:
   - For automated: Check verification.log shows tests/builds were run
   - For manual: Check manual-evidence.log demonstrates the task works
   - For review: Check verification.log shows compile/lint/tests were run
-- **Verification evidence matches the summary** in output.yaml
+- Verification evidence matches the summary in output.yaml
+
+For each explore task (agent: explore), evaluate whether:
+- Referenced files and directories actually exist
+- Function signatures, type definitions, and exports match what was reported
+- Patterns described are accurate (spot-check against actual codebase)
+- Important files or patterns were not missed
+- The conclusions follow from the evidence in the codebase
+- Check the deviations field in output.yaml; if the agent examined files not
+  in the plan, a deviation is reasonable if the file was contextually necessary
+  to answer the task's question (e.g., following an import chain); flag as
+  blocking if the agent examined files that are unrelated to the objective
 
 Important: Issues that must be marked as blocking:
 - Objective not met
+- A claimed file does not exist or does not contain the expected changes
 - Verification not performed (missing or fake evidence)
 - Verification evidence contradicts the summary
-- Code changes don't match what was claimed
 - Build/test/lint failures in evidence
+- A finding that downstream tasks will rely on being wrong (explore tasks)
 
-Write critique.yaml to your task directory with your verdict
-(accepted | needs-work) and a list of specific issues with severity
-(blocking | warning | nit).
-Only blocking issues should result in a needs-work verdict.
+Write gate-critique.yaml to the dispatch run directory. Include:
+- tasks: list of all task IDs you reviewed (e.g., [1a-task, 1b-task])
+- verdict: accepted | needs-work
+- issues: list of specific issues with task-id and severity (blocking | warning | nit)
+- new-tests: entries (task-id + file) for any test files you created during review (omit if none)
+- notes: optional free-text observations for the orchestrator
+Only blocking issues should result in a needs-work verdict for a task.
 ```
 
-#### Default critique prompt with validation
+#### Default gate prompt with validation
 
-When `validate-fix` is enabled for this task:
+When no custom `critique.prompt` is provided and `validate-fix` is enabled for one or more tasks in the level:
 
 ```
-You are reviewing the work of another agent with MUTATION TESTING enabled.
+You are reviewing the work of a group of agents with MUTATION TESTING enabled
+for some tasks.
 
-Follow the standard critique process, then perform validation:
+Follow the standard gate critique process for all tasks, then perform mutation
+testing for each task that has validate-fix enabled:
 
-MUTATION TESTING PROCEDURE:
-1. Identify the fix commit from files-modified in output.yaml
-2. Revert the fix: git revert --no-commit <fix-commit-sha>
-3. Run the test command: <test-command from validate-fix config>
-4. Capture full output to: mutation-test-without-fix.log (in your task directory)
-5. Restore the fix: git revert --abort
-6. Run the test command again
-7. Capture full output to: mutation-test-with-fix.log (in your task directory)
+MUTATION TESTING PROCEDURE (per task with validate-fix):
+Note: mutation testing requires the `per-task` commit strategy. Each task must have committed its changes before the gate critique runs; otherwise there is no commit to revert. If the commit strategy is not `per-task`, skip mutation testing for this task and add an entry to `skipped-validation` in gate-critique.yaml with `type: structural` and a reason. Do NOT leave the `validation` entry absent — use `skipped-validation` so the orchestrator knows the skip was intentional.
+
+Also note: `git log -1 -- <file>` returns the most recent commit that touched each file, not necessarily this task's commit. If downstream tasks or fix tasks have re-touched files after this task committed, the SHA lookup may return a later commit. The all-files-same-SHA check below detects the obvious case but cannot detect when all files were re-touched by the same later commit.
+
+1. If `files-modified` is empty, add a `skipped-validation` entry with `type: structural` and reason "files-modified is empty" — do not attempt mutation testing.
+2. Run `git log -1 --format="%H" -- <file>` for **each** file in that task's `files-modified`. If all files return the same SHA, use that SHA to revert. If any file returns a different SHA (i.e., different files were last touched by different commits), add an entry to `skipped-validation` with `type: anomaly` and reason "ambiguous commit attribution: files-modified span multiple commits" — do not attempt mutation testing for this task.
+3. Revert the fix: git revert --no-commit <fix-commit-sha>
+4. Run the test command: <test-command from validate-fix config>
+5. Capture full output to: mutation-test-without-fix.log (in that task's directory)
+6. Restore the fix: git revert --abort (aborts the in-progress revert; restores the working tree to HEAD in both clean and conflict cases; does not touch untracked new test files)
+7. Run the test command again
+8. Capture full output to: mutation-test-with-fix.log (in that task's directory)
 
 VALIDATION CRITERIA:
 - Test MUST fail when fix is reverted (without-fix status: failed)
 - Test MUST pass when fix is present (with-fix status: passed)
-- Any deviation is a BLOCKING issue
-
-FILE LOCATIONS:
-- Your task directory: dispatch/<run-name>/<task-id>/
-- Write evidence files (mutation-test-*.log) to your task directory
-- If you create additional test files, place them in the repository (not task directory)
+- Any deviation is a BLOCKING issue for that task
 
 WORKING TREE REQUIREMENTS:
 - DO NOT make any git commits
@@ -1045,46 +1102,57 @@ WORKING TREE REQUIREMENTS:
 - Exception: new test files you create should remain
 
 OUTPUT:
-Include validation results in critique.yaml:
-- validation.mutation-test: commit SHA and test results
-- new-tests: list any test files you created (for orchestrator to commit)
+Write gate-critique.yaml to the dispatch run directory. Include:
+- tasks: list of all task IDs you reviewed
+- verdict: accepted | needs-work
+- issues: list of specific issues with task-id and severity (blocking | warning | nit)
+- validation: a list, one entry per task where mutation testing ran; each entry has task-id and mutation-test subfields (see gate-critique.yaml format)
+- skipped-validation: a list, one entry per task where mutation testing was skipped; each entry has task-id, type (structural | anomaly), and reason (omit if none skipped)
+- new-tests: entries (task-id + file) for any test files you created (omit if none)
+- notes: optional free-text observations for the orchestrator
 ```
 
-#### Default explore critique prompt
+#### Default explore gate prompt
 
-When critiquing an `explore` agent and no custom `critique.prompt` is provided:
+When all tasks in the gate input set are `explore` agents, no custom `critique.prompt` is provided, and no `validate-fix` tasks are present:
 
 ```
-You are verifying the research findings of another agent. You have:
+You are verifying the research findings of a group of explore agents that ran
+in parallel. You have, for each task:
 
-1. The original plan (plan.md) describing what was asked
-2. The agent's findings (output.yaml)
+1. The task's plan.md (what was asked)
+2. The task's output.yaml (the agent's findings)
 
-Your job is to independently verify key claims against the actual
-codebase. Do NOT take the findings at face value.
+Your job is to independently verify key claims against the actual codebase.
+Do NOT take findings at face value.
 
-Check whether:
+For each task, check whether:
 - Referenced files and directories actually exist
 - Function signatures, type definitions, and exports match what was reported
 - Patterns described (e.g., "all routes use X middleware") are accurate
 - Important files or patterns were not missed
 - The conclusions follow from the evidence in the codebase
-- **Files examined match plan:** Check deviations field in output.yaml. If agent examined files not in plan, verify the deviation is reasonable for research purposes.
+- Check the deviations field in output.yaml; if the agent examined files not
+  in the plan, a deviation is reasonable if the file was contextually necessary
+  to answer the task's question (e.g., following an import chain); flag as
+  blocking if the agent examined files unrelated to the objective
 
-Write critique.yaml to your task directory with your verdict
-(accepted | needs-work) and a list of specific issues with severity
-(blocking | warning | nit).
-Only blocking issues should result in a needs-work verdict.
+Write gate-critique.yaml to the dispatch run directory. Include:
+- tasks: list of all task IDs you reviewed
+- verdict: accepted | needs-work
+- issues: list of specific issues with task-id and severity (blocking | warning | nit)
+- notes: optional free-text observations for the orchestrator
+Only blocking issues should result in a needs-work verdict for a task.
 A finding that downstream tasks will rely on being wrong is blocking.
 ```
 
 ### Step 3c: Fix task resolution
 
-After processing all tasks in the batch (including build verification and critique), check every newly completed task: if it has a `fixes` field, transition each referenced original task's status from `fixing` to `completed` in the manifest. When `fixes` is a list, transition all referenced originals. Only apply this transition when the original task's current status is `fixing`.
+After the level gate critique completes and tasks are marked `completed` or `fixing`, check every newly completed task: if it has a `fixes` field, transition each referenced original task's status from `fixing` to `completed` in the manifest. When `fixes` is a list, transition all referenced originals. Only apply this transition when the original task's current status is `fixing`.
 
 This is what unblocks downstream tasks. Downstream tasks `depends-on` the original task ID, not the fix task. When the original transitions to `completed`, downstream tasks enter the ready set in the next iteration of Step 1.
 
-Note: if a fix task itself is rejected by critique, the fix task transitions to `fixing` and a new fix task is created (e.g., `1a-fix2`) with `fixes` pointing to the same original task (not to the previous fix task). The rejected intermediate fix task (`1a-fix1`) stays at `fixing` permanently -- this is expected and cosmetic, since nothing references it in a `fixes` field. Only the original task's status matters for unblocking downstream dependents.
+Note: if a fix task itself is rejected by the gate critique, the fix task transitions to `fixing` and a new fix task is created (e.g., `1a-fix2`) with `fixes` pointing to the same original task (not to the previous fix task). The rejected intermediate fix task (`1a-fix1`) stays at `fixing` permanently -- this is expected and cosmetic, since nothing references it in a `fixes` field. Only the original task's status matters for unblocking downstream dependents.
 
 ### Step 4: Unexpected modification detection (Safety Net)
 
@@ -1233,7 +1301,7 @@ The fix loop handles regressions detected in Phase 5:
 
 ## Fix Task Creation
 
-This section applies to fix tasks created by both critique rejection (Step 3a) and verification failure (Phase 5 fix loop).
+This section applies to fix tasks created by both critique rejection (Step 3b) and verification failure (Phase 5 fix loop).
 
 ### Naming
 
@@ -1265,7 +1333,7 @@ The orchestrator determines `<n>` by counting existing fix tasks for the same or
 ```
 
 Key fields:
-- `fixes`: references the original planned task ID or a list of IDs (not previous fix tasks). When this fix task completes, the execution engine (Step 3b) transitions each referenced original task from `fixing` to `completed`. Use a list when a single fix addresses a cross-task interaction (e.g., mismatched interfaces between two tasks).
+- `fixes`: references the original planned task ID or a list of IDs (not previous fix tasks). When this fix task completes, the execution engine (Step 3c) transitions each referenced original task from `fixing` to `completed`. Use a list when a single fix addresses a cross-task interaction (e.g., mismatched interfaces between two tasks).
 - `depends-on`: includes the original task(s) being fixed. Since the originals have status `fixing` and this task has a `fixes` field, Step 1 treats those dependencies as satisfied. Do NOT include previous fix tasks (e.g., `1a-fix1`) in `depends-on` -- they may have status `failed`, which would deadlock the new fix. Ordering between fix attempts is implicit: the orchestrator creates fix tasks sequentially, so `1a-fix2` is only created after `1a-fix1` has finished and failed. When a verification failure involves multiple tasks (cross-task interaction), the fix task's `depends-on` should include all attributed original tasks, and the plan should reference relevant output from all of them.
 - `receives: []`: fix tasks MUST set `receives: []` explicitly. Omitting this field would cause `receives` to default to `depends-on`, which would inject the original task's `output.yaml` -- a document that claims `status: completed` despite the task having been rejected. Instead, all context is included directly in the fix task's `plan.md` (see Plan content below).
 - `commit-group`: inherited from the original task's `commit-group`. If the original had no group, the fix task has no group. When `fixes` is a list and the referenced originals have different `commit-group` values, the fix task has no group (it gets its own commit under the `grouped` strategy). If all referenced originals share the same group, the fix task inherits it.
@@ -1407,9 +1475,11 @@ The orchestrator and subagents agree on the following:
 |---|---|---|---|
 | `plan.md` | Task instructions | Orchestrator | Subagent |
 | `output.yaml` | Task results (source of truth) | Subagent (Orchestrator for `explore` agents) | Orchestrator |
-| `critique.yaml` | Review verdict | Critique agent | Orchestrator |
+| `level<N>-gate-critique.yaml` | Gate verdict for planned tasks at level N | Critique agent | Orchestrator |
+| `level<N>-fix-round<R>-gate-critique.yaml` | Gate verdict for fix round R at level N | Critique agent | Orchestrator |
 | Task tool return | Diagnostic supplement (advisory) | Subagent | Orchestrator (diagnostics only) |
 | `dispatch.yaml` | Run state and DAG | Orchestrator | Orchestrator |
+| `mutation-test-*.log` (in task dir) | Mutation testing evidence | Critique agent | Human (paths stored in gate-critique.yaml for reference; orchestrator never reads directly) |
 | Other files in task dir | Scratch space | Subagent | Nobody (unless referenced in exports) |
 
 **`output.yaml` is the source of truth for task completion.** The Task tool return message is advisory -- used for diagnostics when things fail and as a sanity check against `output.yaml`. If they conflict, `output.yaml` wins.
