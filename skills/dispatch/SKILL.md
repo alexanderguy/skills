@@ -669,7 +669,7 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 
 ### Coherence
 
-- No two tasks at the same level plan to modify the same file. If they do, they must be merged into one task. Adding a `depends-on` edge between same-level tasks to work around this is wrong — it just creates an artificial sequencing dependency where the work should have been one task.
+- No two tasks at the same level plan to modify the same file. If they do, they must be either merged into one task or serialized via `depends-on`. Merge when the work is closely related and shares context; serialize when the tasks have different concerns that happen to touch the same file and each needs its own context to function correctly.
 - Tasks that `receive` upstream context actually need it -- the upstream task's described output is relevant to the downstream task's objective
 - The DAG ordering makes sense -- tasks do not depend on unrelated tasks purely for serialization
 - Constraints across tasks do not contradict each other
@@ -680,7 +680,7 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 
 - **Mutating git operations**: Tasks that commit (`git commit`), checkout branches (`git checkout`), modify the git index (`git add`, `git rm`), or change repository state must be serialized. Read-only operations (`git status`, `git log`, `git diff`) are safe to run in parallel. Two simultaneous `git commit` operations will corrupt the repository state.
 - **Build systems**: Tasks running `make`, `npm run build`, or similar must be serialized if they write to shared build artifacts, caches, or output directories.
-- **File writes**: Tasks at the same level writing to the same file must be merged (caught as a blocking issue in the Coherence check). Tasks at different levels are already serialized by the DAG and do not conflict.
+- **File writes**: Tasks at the same level writing to the same file must be merged or serialized (caught as a blocking issue in the Coherence check). Tasks at different levels are already serialized by the DAG and do not conflict.
 - **Test databases**: Tasks that reset or mutate shared test databases must be serialized.
 
 **The rule**: If two tasks would interfere with each other when run simultaneously in the same repository, add a `depends-on` edge to enforce ordering. Do not rely on timing or assume "it will probably be fine."
@@ -699,7 +699,7 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 | **Warnings** | Present warnings (e.g., "tasks A and B depend on each other's outputs but the dependency edge is missing"). Ask whether to proceed or adjust. |
 | **Blocking issues** | Present issues (e.g., "circular dependency between X and Y", "task Z references non-existent file", "tasks A and B are at the same level and both modify `config.ts`"). Do not proceed until resolved. |
 
-For same-file same-level conflicts, the resolution is always to merge the two tasks — not to add a `depends-on` edge. Fix the plan and propose the merge to the user. For ambiguous issues, ask.
+For same-file same-level conflicts, merge the tasks if they share context and concerns; add a `depends-on` edge to serialize them if they are independent work that happens to touch the same file. Fix the plan and propose the resolution to the user. For ambiguous issues, ask.
 
 On resume, re-validate the remaining (non-completed) portion of the DAG before continuing.
 
