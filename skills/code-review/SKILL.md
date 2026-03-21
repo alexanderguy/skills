@@ -120,6 +120,23 @@ libraries. Focus test coverage requests on:
 Trust well-maintained libraries to do their job. If a library's behavior needs
 testing, that suggests reconsidering whether to use that library.
 
+## Signal Over Noise
+
+A review should help the author, not burden them. Do not raise issues that are
+not important to the code being reviewed. Specifically:
+
+- Do not flag hypothetical problems in unlikely scenarios that the code does
+  not need to handle today or in the near future.
+- Do flag architectural choices that would limit or constrain future
+  implementations, even if they work fine today.
+- Do not leave minor stylistic nits that have no impact on correctness,
+  readability, or maintainability.
+- Do not make vague observations like "this could be cleaner" without a
+  concrete reason it matters.
+
+If something should be fixed, say so directly. If it's not worth fixing, don't
+bring it up.
+
 ## Review Checklist
 
 1. Determine the base branch using the methods in "Base Branch Determination"

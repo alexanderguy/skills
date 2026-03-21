@@ -134,6 +134,7 @@ Load and follow the `code-review` skill to perform the actual review. The code-r
 - Handling pre-existing code
 - Convention compliance
 - Test coverage philosophy
+- Signal over noise (avoiding unactionable findings)
 - Review checklist
 
 ## Cleanup
