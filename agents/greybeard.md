@@ -1,7 +1,7 @@
 ---
 description: Seasoned engineer review of product, architecture, and implementation documentation
 mode: subagent
-model: anthropic/claude-opus-4-6
+model: opus
 color: "#6B7280"
 ---
 
