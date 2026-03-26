@@ -110,6 +110,18 @@ When making changes to code, check whether related documentation needs updating:
 
 Update documentation in the same commit as the code change, not as a separate task.
 
+## Scope Discipline
+
+Only touch code that is directly related to the task at hand. Do not make drive-by changes to surrounding code, even if they look like improvements. Common violations:
+
+- Reformatting lines you didn't otherwise need to change
+- Adding or removing comments on unrelated code
+- Renaming variables or functions outside the scope of your task
+- Adjusting whitespace, import order, or style in files you're passing through
+- "While I'm here" refactors that aren't part of the assignment
+
+These changes pollute diffs, make review harder, and risk introducing unintended breakage. If you notice something that genuinely needs fixing, raise it as a separate piece of work rather than bundling it in.
+
 ## Code Reuse and Refactoring
 
 Do not reimplement functionality that already exists in the codebase. Before writing new code:
