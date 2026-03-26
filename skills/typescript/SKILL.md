@@ -72,26 +72,35 @@ TypeScript-specific guidelines for type safety and code organization.
 
 ### Acronyms in Names
 
-Preserve acronym capitalization based on position:
+Acronyms are not words. Do not conform them to camelCase or PascalCase word boundaries. Preserve the acronym's natural capitalization:
 
 ```
-// Good - acronyms stay capitalized when starting uppercase
+// Good - types preserve acronyms
+type JSONSchema = { ... }
+type HTTPResponse = { ... }
+type APIClient = { ... }
+type XMLParser = { ... }
+
+// Bad - don't camelCase acronyms in types
+type JsonSchema = { ... }   // Should be JSONSchema
+type HttpResponse = { ... } // Should be HTTPResponse
+type ApiClient = { ... }    // Should be APIClient
+
+// Good - functions and variables preserve acronyms too
 getURLFromRequest
 requestURL
 parseHTTPHeaders
+parseJSON
 
-// Good - lowercase-starting acronyms stay lowercase
-url
-json
-
-// Bad - don't mix case within acronyms
+// Bad
 getUrlFromRequest  // Should be getURLFromRequest
 requestUrl         // Should be requestURL
+parseJson          // Should be parseJSON
 ```
 
 Common acronyms: URL, HTTP, HTTPS, JSON, API, RPC, HTML, XML
 
-Note: "ID" is an abbreviation, so use standard camelCase: `userId`, `requestId`, `getId()`.
+Note: "ID" is an abbreviation, not an acronym, so use standard camelCase: `userId`, `requestId`, `getId()`.
 
 ## Type System Patterns
 

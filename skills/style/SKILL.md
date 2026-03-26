@@ -85,6 +85,20 @@ Update code (too vague)
 Fix bug in server.ts (includes filename)
 ```
 
+## Naming
+
+### Acronyms
+
+Acronyms are not words. Do not reshape them to fit camelCase or PascalCase word boundaries. Preserve the acronym's natural capitalization regardless of position in the name.
+
+```
+// Good
+JSONSchema, HTTPClient, parseJSON, requestURL
+
+// Bad - treating acronyms as regular words
+JsonSchema, HttpClient, parseJson, requestUrl
+```
+
 ## Documentation Maintenance
 
 When making changes to code, check whether related documentation needs updating:
