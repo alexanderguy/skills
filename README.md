@@ -59,6 +59,17 @@ Orchestrate parallel subagent execution with DAG-based scheduling. This skill:
 - Orchestrates commits after verification with configurable strategy and approval
 - Supports resumability from `dispatch.yaml` state
 
+### `implement`
+
+Disciplined per-commit workflow for standalone implementation work. Each commit goes through:
+
+- Greybeard architectural review before coding
+- Build gate (full pipeline: format, lint, build, test)
+- Critique loop with iterative fixes until clean
+- Commit following style conventions
+
+Standalone skill loaded on request. Not part of dispatch.
+
 ### `code-review`
 
 Guidance for performing code reviews and pull request reviews. Includes:
