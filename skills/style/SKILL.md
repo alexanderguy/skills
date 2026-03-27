@@ -57,7 +57,8 @@ Commits should read like a story, allowing others and future-you to understand w
 - Separate refactoring from feature additions (distinct commits)
 - Separate formatting/whitespace fixes from logical changes
 - Each commit should represent one logical unit of work
-- Bug fixes to unpushed commits should be fixup commits (`git commit --fixup=<sha>`) targeting the commit that introduced the bug, then squashed before push with `git rebase --autosquash`
+- **Amend** (`git commit --amend`) to refine the most recent commit (e.g., critique fixes, wording changes, missed files)
+- **Fixup** (`git commit --fixup=<sha>` + `git rebase --autosquash`) to fix an earlier unpushed commit when a later review reveals a problem that belongs on that commit, not HEAD
 
 **Message Format:**
 
