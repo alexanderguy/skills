@@ -137,6 +137,21 @@ not important to the code being reviewed. Specifically:
 If something should be fixed, say so directly. If it's not worth fixing, don't
 bring it up.
 
+## Comment Tone
+
+Review comments are posted under your name to a human author. Write them
+as you would speak to a colleague:
+
+- Frame suggestions as questions or proposals, not commands.
+  "Could we extract this?" not "Extract this."
+- Explain the *why* -- "so that X" or "because Y" -- not just the *what*.
+- Avoid words like "wrong", "broken", "bad". Describe the consequence
+  instead: "this will produce incorrect values when..." not "this is wrong."
+- If the fix is small, suggest it concretely. A one-liner suggestion is
+  more helpful than a paragraph explaining what to change.
+- Do not soften feedback to the point of obscuring it. The author should
+  understand whether something needs to change or is merely a thought.
+
 ## Review Checklist
 
 1. Determine the base branch using the methods in "Base Branch Determination"
