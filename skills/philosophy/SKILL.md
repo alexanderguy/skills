@@ -64,6 +64,18 @@ If the answer to (3) is yes, fix that layer — not a downstream consumer. If yo
 
 If you have made two or more fix commits to the same subsystem without resolving the issue, you are symptom-chasing. Describe the constraint violation and ask where it should be fixed.
 
+## Backwards Compatibility
+
+Backwards compatibility is not inherently virtuous. It depends entirely on context.
+
+**Public interfaces deserve backwards compatibility.** If external consumers depend on your API, CLI, wire format, or SDK, breaking them has real cost. Maintain compatibility there, deprecate gracefully, and version when you must break.
+
+**Internal code does not.** When backwards compatibility in internal code means keeping dead parameters, maintaining two paths through the same logic, or wrapping new code around old assumptions just to avoid updating callers — that's not compatibility, that's tech debt with a noble-sounding name. If you own all the callers, update all the callers.
+
+The instinct to "keep the old way working just in case" creates code that is harder to read, harder to change, and harder to trust. Every shim, adapter, and fallback you leave behind is a lie about how the system actually works. Kill the old path when the new one is proven. Don't leave both alive.
+
+**Ask yourself:** who breaks if I remove this? If the answer is "nobody external," remove it.
+
 ## Testing Philosophy
 
 **Tests are primarily there to verify required behavior is being followed. They're your friend.**

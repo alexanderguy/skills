@@ -139,6 +139,10 @@ When a refactor might be necessary, prompt the user with specific options:
 
 Allow the user to provide their own answer if none of the options fit.
 
+## Removing Dead Code
+
+When refactoring replaces an old implementation, delete the old one. Do not leave backwards-compatibility shims, re-exports, renamed `_unused` variables, or `// removed` comments for code that no longer serves a purpose. If all callers are internal and have been updated, the old path should not survive. See the `philosophy` skill for the reasoning behind this.
+
 ## External Code Attribution
 
 Any code from outside the organization requires careful attribution and licensing compliance:
