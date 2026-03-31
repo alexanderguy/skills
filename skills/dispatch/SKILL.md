@@ -209,24 +209,6 @@ This naming means:
 
 The directory name is also the task's `id` in `dispatch.yaml`.
 
-#### Fix task naming
-
-Fix tasks (created by critique rejection or verification failure) use a different format to distinguish them from planned tasks:
-
-```
-<original-level><original-sequence>-fix<n>-<short_description>
-```
-
-For example, if task `1a-extract_auth_module` fails critique, the fix task might be `1a-fix1-resolve_critique_issues`. A second fix attempt would be `1a-fix2-handle_error_edge_case`.
-
-The orchestrator determines `<n>` by counting existing fix tasks for the same original in the manifest and adding one.
-
-This naming:
-- Sorts fix tasks adjacent to the original task in directory listings
-- Preserves the original level/sequence prefix so it's clear what is being fixed
-- The `-fix<n>-` segment clearly marks it as a fix, not a planned task
-- Does not pollute the level numbering of planned tasks
-
 Each task directory is the subagent's scratchpad. It reads its plan from there, does its work, and writes its results there. After running, a task directory looks like:
 
 ```
@@ -243,15 +225,15 @@ dispatch/<run-name>/
   dispatch.yaml
   level1-gate-critique.yaml         # gate verdict for level 1 planned tasks
   level2-gate-critique.yaml         # gate verdict for level 2 planned tasks
-  level1-fix-round1-gate-critique.yaml  # gate for first round of fix tasks at level 1
-  level1-fix-round2-gate-critique.yaml  # gate for second round (if round 1 fix tasks fail)
+  level1-amend-round1-gate-critique.yaml  # gate for first amendment round at level 1
+  level1-amend-round2-gate-critique.yaml  # gate for second round (if round 1 amendments still have issues)
   1a-extract_auth_module/
     plan.md
     output.yaml
     ...
 ```
 
-A "fix round" for a level is the set of fix tasks that become ready at the same time. Round 1 is the first batch of fix tasks for that level; round 2 is any fix tasks spawned because round 1 fix tasks were themselves rejected; and so on. The round number equals 1 plus the count of existing `level<N>-fix-round*-gate-critique.yaml` files in the dispatch run directory for that level. On resume, stale or malformed gate files from a previously aborted run may inflate the counter by one, causing a gap in the sequence (e.g., round 3 instead of round 2). This is cosmetically imperfect but has no behavioral consequence — gate file names are informational artifacts only and are not used by the execution engine for logic.
+An "amendment round" for a level is one pass through the critique-fix-amend loop. Round 1 is the first re-critique after amendments; round 2 is the re-critique after round 1 amendments still had issues; and so on. The round number equals 1 plus the count of existing `level<N>-amend-round*-gate-critique.yaml` files in the dispatch run directory for that level. On resume, stale or malformed gate files from a previously aborted run may inflate the counter by one, causing a gap in the sequence. This is cosmetically imperfect but has no behavioral consequence — gate file names are informational artifacts only and are not used by the execution engine for logic.
 
 ### Manifest format
 
@@ -281,6 +263,8 @@ commits:
   approval: ask-once         # ask-once | ask-each | auto
   message-source: objective  # objective (from plan.md) | notes (from output.yaml)
 
+level-boundaries: {}           # populated by Step 3a+; maps level number to the commit SHA immediately before that level's first commit (e.g., {1: "abc123", 2: "def456"}). Used by rebuild logic to know where to `git reset` without walking git log.
+
 results:                       # populated by Phase 6; empty until then
   commits: []                  # list of {sha, message, files, tasks} objects
 
@@ -288,21 +272,23 @@ unexpected-modifications: ask  # ask | accept
 
 deviation-handling:
   threshold: moderate         # escalate at this severity and above (minor | moderate | major)
-  auto-fix: true              # Karen can create fix tasks below threshold
+  auto-fix: true              # Karen can handle deviations below threshold autonomously
   escalate-to: user           # user | greybeard (who to consult for threshold+ deviations)
 
 tasks:
   - id: 1a-extract_auth_module
-    agent: general           # general | explore
+    agent: general           # general | intern | explore
     depends-on: []           # task IDs that must complete first
     receives: []             # task IDs whose output to inject (defaults to depends-on)
-    status: pending          # pending | dispatched | completed | failed | fixing
+    status: pending          # pending | dispatched | committed | completed | failed | fixing
+    commit-sha: ""           # populated by Step 3a+ after task's work is committed
+    fixing-source: ""        # critique | verification; set when status transitions to fixing
     critique:                # optional per-task override
       enabled: true
       agent: critique        # defaults to critique
       prompt: |
         Custom critique instructions for this task.
-      validate-fix:          # optional: enable mutation testing validation; requires per-task commit strategy; most reliable when no downstream task re-touches the same files
+      validate-fix:          # optional: enable mutation testing validation; uses the task's commit-sha from Step 3a+
         enabled: false       # opt-in; must be explicitly enabled
         test-command: ""     # command to run test(s) for validation
     commit-group: ""         # optional; used with 'grouped' commit strategy
@@ -334,14 +320,15 @@ The repository root is the nearest ancestor directory containing `.git`. The orc
 
 | Field | Required | Description |
 |---|---|---|
-| `id` | yes | Directory name. Format: `<level><sequence>-<description>`. Fix tasks use `<level><sequence>-fix<n>-<description>`. |
-| `agent` | yes | Subagent type: `general` or `explore` |
-| `depends-on` | yes | Task IDs that must reach `completed` before this task starts (empty list if none). Exception: a fix task may proceed when the specific dependency it fixes is `fixing` -- see Step 1 for the precise rule. |
+| `id` | yes | Directory name. Format: `<level><sequence>-<description>`. |
+| `agent` | yes | Subagent type: `general`, `intern`, or `explore` |
+| `depends-on` | yes | Task IDs that must reach `completed` before this task starts (empty list if none). |
 | `receives` | no | Task IDs whose `output.yaml` to inject as context. Defaults to `depends-on`. Must be a subset of `depends-on`. Use to narrow injection when a task depends on many upstream tasks but only needs context from some. |
-| `fixes` | no | The task ID (or list of task IDs) this fix task is correcting. Only present on fix tasks. Used by the execution engine to transition each referenced original task from `fixing` to `completed` when the fix succeeds. Always references original planned tasks, not previous fix tasks. |
 | `status` | yes | Current run status |
+| `commit-sha` | no | Git commit SHA for this task's changes. Written by the orchestrator during the level fan-in commit step (Step 3a+). Empty until committed. |
+| `fixing-source` | no | Set when status transitions to `fixing`. Either `critique` (Step 3b amendment loop) or `verification` (Phase 5 fix loop). Used by the resume logic to know which fix mechanism to re-enter. Empty when status is not `fixing`. |
 | `critique` | no | Per-task critique config; overrides the global `critique` setting |
-| `commit-group` | no | Group name for the `grouped` commit strategy. Fix tasks inherit this from the task they fix. |
+| `commit-group` | no | Group name for the `grouped` commit strategy. |
 
 ### Task status values
 
@@ -349,9 +336,10 @@ The repository root is the nearest ancestor directory containing `.git`. The orc
 |---|---|
 | `pending` | Not yet ready to dispatch (dependencies incomplete) |
 | `dispatched` | Currently being run by a subagent |
-| `completed` | Finished successfully (`output.yaml` confirms, and critique passed if enabled) |
+| `committed` | Task ran, self-report passed, and changes have been committed to git (Step 3a+). Awaiting critique (if enabled). Transitions to `completed` after critique passes, or to `fixing` if critique finds blocking issues. Tasks without critique enabled skip straight to `completed`. |
+| `completed` | Finished successfully (committed, and critique passed if enabled) |
 | `failed` | Failed after dispatch (`output.yaml` reports failure or is missing) |
-| `fixing` | A fix task has been created for this task. The task ran and produced output, but that output needs correction. `fixing` satisfies `depends-on` only for fix tasks that target this specific task via `fixes` (see Step 1 for the precise rule). Regular downstream tasks must wait for `completed`. The execution engine transitions this to `completed` when a fix task with this task in its `fixes` field succeeds. |
+| `fixing` | The task's committed changes need correction — either critique found blocking issues (Step 3b amendment loop) or Phase 5 verification detected a regression. When setting this status, also set `fixing-source` to `critique` or `verification` so the resume logic knows which mechanism to re-enter. Regular downstream tasks must wait for `completed`. Transitions to `completed` when the fix-and-rebuild cycle passes. |
 
 ### Task file format
 
@@ -452,7 +440,7 @@ deviations:
 
 **If NO deviations:** Include `deviations: []` to confirm you followed the plan exactly.
 
-**Consequence:** If deviations are detected in Step 4 that you didn't report here, your task will be marked FAILED for dishonesty.
+**Consequence:** If unreported deviations are detected during Step 3a, your task will be marked FAILED for contract violation.
 
 ## Upstream Context
 
@@ -608,7 +596,7 @@ When spec issues are found (any `type: spec` issues with severity blocking or wa
 
 **Note:** Spec issues take precedence over plan issues. Fix spec first, then plan.
 
-**Iteration policy (same as execution fix depth):**
+**Iteration policy (same thresholds as critique amendment escalation):**
 
 - **Iterations 1-2:** Calling agent fixes issues (in-place edits to yaml/plan files), re-runs critique
 - **Iteration 3:** Warn that plan is proving difficult to validate
@@ -816,7 +804,7 @@ This maintains the non-reentrant property - once a plan is confirmed and the run
 
 Update `dispatch.yaml` status to `in-progress` when entering this phase for the first time.
 
-Before dispatching any tasks, verify the git working tree is clean (no uncommitted changes outside the `dispatch/` directory). If there are uncommitted changes, warn the user and ask how to proceed -- Phase 6 commits could otherwise include unrelated modifications.
+Before dispatching any tasks, verify the git working tree is clean (no uncommitted changes outside the `dispatch/` directory). If there are uncommitted changes, warn the user and ask how to proceed -- Step 3a+ commits could otherwise include unrelated modifications.
 
 ### Step 1: Resolve ready set
 
@@ -825,11 +813,7 @@ Read `dispatch.yaml`. Find all tasks where:
 - Status is `pending`
 - All tasks in `depends-on` are satisfied
 
-A dependency is satisfied when:
-- Its status is `completed`, OR
-- Its status is `fixing` AND the current task's `fixes` field contains the dependency's task ID
-
-Regular downstream tasks require all dependencies to be `completed`. Only fix tasks are allowed to proceed when a dependency is `fixing`, and only for the specific original task(s) listed in their `fixes` field. This prevents regular downstream tasks from being dispatched against code that was just rejected by critique or verification.
+A dependency is satisfied when its status is `completed`. Tasks in `fixing` status do not satisfy dependencies — downstream tasks must wait until the fix-and-rebuild cycle completes and the task transitions back to `completed`.
 
 These are the "ready set."
 
@@ -887,7 +871,7 @@ Collect results from all dispatched tasks:
      * If severity >= configured threshold: escalate to user immediately
      * If severity < threshold: Karen evaluates and decides:
        - Accept deviation and continue
-       - Create fix task to address deviation
+       - Mark task failed for re-dispatch
        - Consult greybeard if technical judgment needed
    - Karen has authority to handle minor/moderate deviations autonomously
    - Major deviations or uncertainty → escalate to user
@@ -904,17 +888,49 @@ Tasks self-report their verification status. Check that the report is complete:
 3. **Check evidence is not empty** - files have content, not just placeholder text
 
 If evidence is missing or empty:
-- Mark task as `fixing`
-- Create fix task to add verification evidence
-- Skip critique
+- Mark task as `failed` (the task did not fulfill its output contract)
+- Do not commit or critique this task
+- The orchestrator may re-dispatch it in the next iteration of Step 1 if the user chooses to retry failed tasks
 
 If evidence exists and looks reasonable:
-- Hold the task in an internal `self-report-passed` state (in-memory only; not written to `dispatch.yaml`; cleared once Step 3b finishes for the level, whether the gate ran, was skipped, or failed — all tasks exit `self-report-passed` by transitioning to `completed` or `fixing` before Step 3b returns)
-- Once all tasks in the current level have reached `self-report-passed`, `failed`, or `fixing`, proceed to Step 3b (which determines per-task critique eligibility and runs the gate if needed)
+- **Check for unreported modifications** (unless `unexpected-modifications: accept` in manifest): compare the task's `files-modified` (from `output.yaml`) against the files listed in its `plan.md` under "Files to Modify" (best-effort extraction of backtick-quoted file paths). If files were modified outside the plan AND the deviation was NOT reported in `output.yaml`, mark the task `failed` for contract violation ("Task modified [files] without reporting deviation"). If multiple tasks modified the same file and either didn't report the deviation, both are `failed`.
+- Hold the task in an internal `self-report-passed` state (in-memory only; not written to `dispatch.yaml`)
+- Once all tasks in the current level have reached `self-report-passed` or `failed`, proceed to Step 3a+ (level commit)
+
+### Step 3a+: Level Commit
+
+Once all tasks in a level have been collected (Step 3a complete), the orchestrator commits `self-report-passed` tasks' changes. This is the fan-in point — tasks ran in parallel, but git operations are serialized here.
+
+**Why commit before critique:** Without commits, work accumulates uncommitted across levels and fix rounds, making it hard to isolate, review, or revert individual tasks. Committing at the fan-in point gives critique a real diff to review (`git show <sha>`) and gives the orchestrator clean rollback points. This mirrors the implement skill's discipline: build gate passes, commit, critique, amend.
+
+**Process:**
+
+1. **Record the pre-level boundary:** Save the current HEAD SHA in `level-boundaries` under this level's number. This is the commit immediately before this level's work. Rebuild logic uses this to know where to `git reset` without walking git log.
+2. Group `self-report-passed` tasks into commit units:
+   - Tasks sharing the same `commit-group` value form a single commit unit
+   - Tasks with no `commit-group` (or a unique value) each form their own commit unit
+   - Tasks marked `failed` in Step 3a are excluded
+3. Sort commit units in topological order (break ties alphabetically). For grouped units, use the earliest task in the group for ordering.
+4. For each commit unit, in order:
+   a. `git add` the files listed in `files-modified` from all tasks in the unit
+   b. Generate a commit message based on the manifest's `message-source` setting:
+      - `message-source: objective` (default): derive from the task's `plan.md` objective
+      - `message-source: notes`: derive from the task's `output.yaml` notes
+      - For grouped units: synthesize from the objectives/notes of all tasks in the group
+      - Follow `style` skill conventions
+   c. `git commit`
+   d. Record the commit SHA in `commit-sha` for every task in the unit (all tasks in a group share the same SHA)
+   e. Update each task's status to `committed` in `dispatch.yaml`
+
+**Explore tasks and other zero-file commit units:** When a commit unit would contain zero files (e.g., explore tasks with empty `files-modified`), skip the commit but still update each task's status to `committed` with an empty `commit-sha`. This ensures explore tasks enter the critique gate input set in Step 3b.
+
+**Shared file attribution:** When multiple tasks at the same level list the same file in `files-modified`, the file is attributed to the last task in topological order. Earlier tasks' commits skip that file. If a commit unit would contain zero files after attribution, skip it entirely. This same rule applies during rebuilds (amendment loop and Phase 5 fix loop) — attribution is always re-computed from scratch using the current `files-modified` lists and the topological rule. If a fix agent added a file to task A's `files-modified` that is also listed in task B's `files-modified` (where B is later in topological order), the file goes to B's commit. To avoid this, the fix agent should remove the file from B's `files-modified` if B did not meaningfully change it, or the orchestrator should flag the conflict for manual resolution.
+
+After all commit units are created, proceed to Step 3b.
 
 ### Step 3b: Level Gate Critique (if enabled)
 
-Once all tasks in the current level have passed Step 3a (or been marked `failed`/`fixing`), determine which tasks need critique. Per-task setting takes precedence over global. The global `critique.enabled` defaults to `true` when the `critique.enabled` key is absent — whether the entire `critique` block is omitted or the block exists but lacks the `enabled` key.
+Once all tasks in the current level have been committed (Step 3a+) or marked `failed`, determine which tasks need critique. Per-task setting takes precedence over global. The global `critique.enabled` defaults to `true` when the `critique.enabled` key is absent — whether the entire `critique` block is omitted or the block exists but lacks the `enabled` key.
 
 | Global `critique.enabled` | Per-task `critique.enabled` | Needs critique? |
 |---|---|---|
@@ -927,7 +943,7 @@ Once all tasks in the current level have passed Step 3a (or been marked `failed`
 
 Tasks that do not need critique are marked `completed` immediately. Tasks that need critique form the gate input set. If the gate input set is empty, skip the gate entirely.
 
-The gate input set is also restricted to tasks in `self-report-passed` state — tasks already marked `failed` or `fixing` (due to Step 3a evidence failures) are excluded. They are not re-evaluated by the gate.
+The gate input set is restricted to tasks in `committed` state — tasks marked `failed` (due to Step 3a evidence or contract failures) are excluded.
 
 If the gate input set is non-empty, spawn a single gate critique agent:
 
@@ -937,7 +953,7 @@ If the gate input set is non-empty, spawn a single gate critique agent:
    - Note: when tasks have heterogeneous per-task agent types, both custom preferences are discarded in favor of the global default. If this is unacceptable for a level, the tasks should be split into separate levels or given a shared per-task agent type.
 
    The critique agent receives:
-   - For each task in the gate input set: its `plan.md`, its `output.yaml`, and the evidence files listed in its `verification-summary`
+   - For each task in the gate input set: the committed diff (`git show <commit-sha>` using the task's `commit-sha`), its `plan.md`, its `output.yaml`, and the evidence files listed in its `verification-summary`
    - The repository root and task directory paths for each task
    - A prompt selected by applying these rules in order:
      1. If all gate-input tasks have a per-task `critique.prompt` and they are all identical → use that prompt
@@ -946,37 +962,72 @@ If the gate input set is non-empty, spawn a single gate critique agent:
      4. Otherwise → if all gate-input tasks are `explore` agents, use the explore gate prompt; else use the standard gate prompt
      - Same trade-off as agent type: heterogeneous or partial per-task prompts are discarded in favor of the global default
      - **Warning:** If a per-task or global `critique.prompt` is selected (rules 1 or 2) and any gate-input task has `validate-fix.enabled: true`, the custom prompt will be used as-is — mutation testing instructions are not automatically injected. Log a warning that validate-fix tasks are present but the custom prompt was used; mutation testing will not run unless the custom prompt includes those instructions.
-2. The critique agent writes one `gate-critique.yaml` to `dispatch/<run-name>/`. For planned tasks the file is named `level<N>-gate-critique.yaml` (e.g., `level1-gate-critique.yaml`). For fix task gates it is named `level<N>-fix-round<R>-gate-critique.yaml` where R is the fix round number (see directory structure above).
+2. The critique agent writes one `gate-critique.yaml` to `dispatch/<run-name>/`. For planned tasks the file is named `level<N>-gate-critique.yaml` (e.g., `level1-gate-critique.yaml`). For amendment rounds it is named `level<N>-amend-round<R>-gate-critique.yaml` where R is the amendment round number.
 3. Based on the verdict:
    - Tasks with no blocking issues → mark `completed`
-   - Tasks referenced by blocking issues → mark `fixing`, create a fix task per affected task (see Fix Task Creation), add to manifest
+   - Tasks referenced by blocking issues → mark `fixing` in `dispatch.yaml` with `fixing-source: critique`, then enter the **amendment loop** (see below). Setting `fixing` status and source is required for resumability.
 
-Fix tasks for a level form their own mini-gate: when they complete Step 3a, a new gate critique runs scoped to just the fix task set (same per-task critique enablement rules apply).
-
-**Single-task levels** follow the same path. When a level has only one task, the gate input set contains that one task and the gate runs as normal. This degenerates to the same behavior as the old per-task model, just with consistent mechanics.
+**Single-task levels** follow the same path. When a level has only one task, the gate input set contains that one task and the gate runs as normal.
 
 If the critique agent fails to produce a valid `gate-critique.yaml` (crashes, times out, or writes a malformed file), treat the gate as `accepted` for all tasks in the gate input set and mark them `completed`. Log a warning that critique was skipped due to infrastructure failure.
 
 Critique agents count toward `max-parallel`.
 
+#### Amendment loop
+
+When critique finds blocking issues in committed tasks, the orchestrator fixes and amends those commits rather than creating separate fix tasks. This mirrors the implement skill's critique loop: fix, rebuild, amend, re-critique.
+
+Amendments are processed per commit unit (see Step 3a+). Tasks that share a `commit-group` share a commit — their issues are fixed together and the shared commit is amended once. Tasks with individual commits are amended independently.
+
+**Important:** `git commit --amend` only modifies HEAD. A level may have multiple commit units (A, B, C), and critique may find issues in any of them. You cannot amend commit A if B and C sit on top of it. The amendment loop therefore rebuilds the level's commits after fixes are applied.
+
+**Process:**
+
+1. **Fix phase** — for each commit unit with blocking issues (serialized — fix agents operate in the same working tree and may need to modify shared files):
+   a. Spawn a fix agent (same agent type as the original task, or `general` for grouped units) with:
+      - The blocking issues from `gate-critique.yaml` for this commit unit
+      - The `plan.md` files for all tasks in the unit (original objectives for context)
+      - The committed diff (`git show <commit-sha>`)
+      - Instruction: fix only the specific issues identified by critique, do not expand scope
+   b. The fix agent updates the task's `files-modified` in `output.yaml` if it modified files not already listed (the rebuild step uses `files-modified` to know which files to commit)
+   c. Re-run the build gate (full pipeline: format, lint, build, test)
+      - If the build fails, the fix agent must resolve before proceeding
+
+2. **Rebuild level commits** — after all fix agents for this round complete:
+   a. **Re-mark all non-failed tasks in the level as `committed`** in `dispatch.yaml`, clearing `fixing-source` for any tasks that were in `fixing` status. This includes tasks that previously passed critique (`completed`) — their commits are about to be destroyed and recreated. This is critical for resumability: if a crash occurs during the rebuild, the resume logic handles `committed` tasks by checking whether their `commit-sha` exists in git log.
+   b. `git reset` (mixed, the default) to the pre-level boundary SHA from `level-boundaries` for this level. This moves HEAD back and resets the index, but preserves the working tree with all fixes applied. Using mixed reset (not `--soft`) is critical — `--soft` would leave all files staged in the index, causing the first `git add` + `git commit` to absorb files from all commit units.
+   c. Re-create all commit units for this level in topological order, following the same process as Step 3a+ (git add files, commit, record SHA). Commit messages are preserved from the original commits.
+   d. Update `commit-sha` for all tasks in the level to their new SHAs.
+   e. Since downstream levels have not started yet, no later commits depend on the old SHAs.
+
+3. **Re-run critique** on the rebuilt commits:
+   - Spawn critique with the new diffs (`git show <new-sha>` for each commit unit)
+   - Include the original intent from `plan.md` and what was fixed since last pass
+   - Critique evaluates ALL commit units in the level (not just the ones that had issues), since commits were rebuilt
+   - Critique writes a new gate file: `level<N>-amend-round<R>-gate-critique.yaml`
+   - Note: re-critiquing previously-approved tasks may surface new issues due to non-determinism in critique evaluation. This is expected — escalation (below) handles the case where critique flip-flops across rounds.
+
+4. **Repeat** until critique passes or escalation triggers:
+   - Round 1-2: Fix silently
+   - Round 3: Notify user that a task is proving difficult
+   - Round 4+: Ask user for guidance (proceed, consult greybeard, abort)
+
+5. When critique passes: mark all non-failed tasks in the level `completed`
+
+**New test files from critique:** If `gate-critique.yaml` contains `new-tests` entries for a task, add those files to the task's `files-modified` in `output.yaml`. They will be picked up during the level rebuild (step 2b) along with other fix changes.
+
 **Handling validation results:**
 
-If `validate-fix` was enabled for a task:
+If `validate-fix` was enabled for a task, the critique agent can perform mutation testing directly against the task's commit (using the `commit-sha`):
 1. Check whether `gate-critique.yaml` contains a `skipped-validation` entry where `task-id` matches the task. If present:
-   - `type: structural`: log the reason and treat the task as if mutation testing passed. Do not block.
-   - `type: anomaly`: log the reason as a **warning** to the operator and treat the task as if mutation testing passed. Do not block, but the operator should investigate why files span multiple commits or why files-modified is empty.
-2. Otherwise, check that `gate-critique.yaml` contains a `validation` list entry where `task-id` matches the task. If the entry is absent (and no `skipped-validation` entry exists), treat this as a blocking issue — mutation testing was required but not performed (likely because a custom prompt was used that does not include mutation testing instructions; see the warning in the prompt selection rules above)
-3. If the `validation` entry is present, check its `mutation-test` field: verify without-fix.status is "failed" and with-fix.status is "passed"
-4. If without-fix.status is not "failed" or with-fix.status is not "passed", treat as a blocking issue (needs-work) for that task
-5. Evidence files (mutation-test-*.log) remain in the task directory for reference
+   - `type: structural`: log the reason and treat as if mutation testing passed. Do not block.
+   - `type: anomaly`: log as a **warning** and treat as if mutation testing passed.
+2. Otherwise, check for a `validation` entry. If absent (and no `skipped-validation`), treat as blocking — mutation testing was required but not performed.
+3. If present, verify `without-fix.status` is "failed" and `with-fix.status` is "passed"
+4. Any deviation is blocking for that task
+5. Evidence files (mutation-test-*.log) remain in the task directory
 
-**Handling new test files:**
-
-For each task being processed, find the entries in `gate-critique.yaml`'s `new-tests` list where `task-id` matches that task, then:
-1. Add each matched `file` to that task's `files-modified` list in its `output.yaml`
-2. They will be included when the task's commit is created
-
-For `explore` agents (whether in a pure-explore level or mixed with other agent types), the gate critique verifies findings against the actual codebase rather than reviewing file changes. The gate agent independently checks the codebase to verify key claims from each explore task's output.yaml: file existence, pattern identification, function signatures, module structure, etc. For a `needs-work` verdict on an explore task, the fix task is an `explore` agent that re-investigates, receiving the critique issues as context. The orchestrator writes a new `output.yaml` on the fix task's behalf as usual for explore agents.
+**Explore agents:** The gate critique verifies findings against the actual codebase rather than reviewing file changes. The gate agent independently checks key claims from each explore task's output.yaml: file existence, pattern identification, function signatures, module structure, etc. For a `needs-work` verdict on an explore task, a fix agent (also `explore`) re-investigates with the critique issues as context. The orchestrator writes a new `output.yaml` on the fix agent's behalf. Explore tasks have no commits to amend, so the amendment loop does not apply — instead, the re-investigation produces corrected findings and the orchestrator updates `output.yaml`.
 
 #### gate-critique.yaml format
 
@@ -1001,7 +1052,7 @@ validation:                    # present only if validate-fix was enabled for a 
 skipped-validation:            # present only if validate-fix was enabled but mutation testing was skipped
   - task-id: 1a-task
     type: structural | anomaly   # structural = expected config incompatibility; anomaly = runtime detection failure
-    reason: "Commit strategy is not per-task; cannot identify fix commit to revert"
+    reason: "files-modified is empty; no commit to revert"
 new-tests:                     # files critique created that should be committed
   - task-id: 1a-task
     file: src/tests/range-field.spec.ts
@@ -1019,18 +1070,17 @@ The critique agent must not modify source files. If it does, treat this as a bug
 When no custom `critique.prompt` is provided, no `validate-fix` tasks are present, and the level is not exclusively `explore` agents:
 
 ```
-You are reviewing the work of a group of agents that ran in parallel. You have,
-for each task in the level:
+You are reviewing the committed work of a group of agents that ran in parallel.
+For each task in the level, you have:
 
-1. The task's plan.md (what was asked)
-2. The task's output.yaml (what the agent claims it did)
-3. The evidence files listed in the task's verification-summary
+1. The committed diff (git show <commit-sha>)
+2. The task's plan.md (what was asked)
+3. The task's output.yaml (what the agent claims it did)
+4. The evidence files listed in the task's verification-summary
 
 For each non-explore task, evaluate whether:
-- The objective in plan.md was met
-- The files listed in files-modified actually exist on disk and match what
-  the plan described (check each file's contents against the plan's "Files to
-  Modify" section and the task's stated objective)
+- The committed diff matches the objective in plan.md
+- The changes are correct, complete, and well-structured
 - Constraints from the plan were respected
 - Verification was actually performed:
   - For automated: Check verification.log shows tests/builds were run
@@ -1051,7 +1101,7 @@ For each explore task (agent: explore), evaluate whether:
 
 Important: Issues that must be marked as blocking:
 - Objective not met
-- A claimed file does not exist or does not contain the expected changes
+- Committed changes do not match what the plan described
 - Verification not performed (missing or fake evidence)
 - Verification evidence contradicts the summary
 - Build/test/lint failures in evidence
@@ -1078,13 +1128,16 @@ Follow the standard gate critique process for all tasks, then perform mutation
 testing for each task that has validate-fix enabled:
 
 MUTATION TESTING PROCEDURE (per task with validate-fix):
-Note: mutation testing requires the `per-task` commit strategy. Each task must have committed its changes before the gate critique runs; otherwise there is no commit to revert. If the commit strategy is not `per-task`, skip mutation testing for this task and add an entry to `skipped-validation` in gate-critique.yaml with `type: structural` and a reason. Do NOT leave the `validation` entry absent — use `skipped-validation` so the orchestrator knows the skip was intentional.
-
-Also note: `git log -1 -- <file>` returns the most recent commit that touched each file, not necessarily this task's commit. If downstream tasks or fix tasks have re-touched files after this task committed, the SHA lookup may return a later commit. The all-files-same-SHA check below detects the obvious case but cannot detect when all files were re-touched by the same later commit.
+Each task's commit SHA is provided via the task's `commit-sha` field. Use this
+SHA directly — do not attempt to discover it via git log.
 
 1. If `files-modified` is empty, add a `skipped-validation` entry with `type: structural` and reason "files-modified is empty" — do not attempt mutation testing.
-2. Run `git log -1 --format="%H" -- <file>` for **each** file in that task's `files-modified`. If all files return the same SHA, use that SHA to revert. If any file returns a different SHA (i.e., different files were last touched by different commits), add an entry to `skipped-validation` with `type: anomaly` and reason "ambiguous commit attribution: files-modified span multiple commits" — do not attempt mutation testing for this task.
-3. Revert the fix: git revert --no-commit <fix-commit-sha>
+2. Use the task's `commit-sha` to identify the commit to revert.
+3. Revert the fix: git revert --no-commit <commit-sha>
+   If the revert produces conflicts (because later commits in the level depend on
+   this task's changes), add a `skipped-validation` entry with `type: anomaly`
+   and reason "revert produced conflicts with later commits in level", run
+   `git revert --abort`, and skip mutation testing for this task.
 4. Run the test command: <test-command from validate-fix config>
 5. Capture full output to: mutation-test-without-fix.log (in that task's directory)
 6. Restore the fix: git revert --abort (aborts the in-progress revert; restores the working tree to HEAD in both clean and conflict cases; does not touch untracked new test files)
@@ -1146,60 +1199,37 @@ Only blocking issues should result in a needs-work verdict for a task.
 A finding that downstream tasks will rely on being wrong is blocking.
 ```
 
-### Step 3c: Fix task resolution
+### Step 3c: Level completion
 
-After the level gate critique completes and tasks are marked `completed` or `fixing`, check every newly completed task: if it has a `fixes` field, transition each referenced original task's status from `fixing` to `completed` in the manifest. When `fixes` is a list, transition all referenced originals. Only apply this transition when the original task's current status is `fixing`.
+After the level gate critique completes (including any amendment rounds), all non-failed tasks in the level are `completed`. This unblocks downstream tasks: downstream tasks `depends-on` the original task IDs, and when a task reaches `completed`, its dependents enter the ready set in the next iteration of Step 1.
 
-This is what unblocks downstream tasks. Downstream tasks `depends-on` the original task ID, not the fix task. When the original transitions to `completed`, downstream tasks enter the ready set in the next iteration of Step 1.
-
-Note: if a fix task itself is rejected by the gate critique, the fix task transitions to `fixing` and a new fix task is created (e.g., `1a-fix2`) with `fixes` pointing to the same original task (not to the previous fix task). The rejected intermediate fix task (`1a-fix1`) stays at `fixing` permanently -- this is expected and cosmetic, since nothing references it in a `fixes` field. Only the original task's status matters for unblocking downstream dependents.
-
-### Step 4: Unexpected modification detection (Safety Net)
-
-**Purpose:** Catch deviations that tasks failed to report in Step 3. This is a safety net for dishonesty or oversight.
-
-If `unexpected-modifications` is set to `accept` in the manifest, skip this step.
-
-After each batch completes, compare each task's actual `files-modified` (from `output.yaml`) against the files listed in its `plan.md` under "Files to Modify". This comparison is best-effort since `plan.md` uses free-form markdown; extract file paths from backtick-quoted segments in the list items. For fix tasks (whose `plan.md` may not have a formal "Files to Modify" section), compare against the original task's planned files and any files mentioned in the error output that triggered the fix:
-
-1. **Check if deviation was reported:**
-   - If files were modified outside plan AND deviation was reported in Step 3: Already handled, no action needed
-   - If files were modified outside plan AND deviation NOT reported: Task FAILED for dishonesty
-
-2. **Handle unreported modifications:**
-   - Mark task as `failed` (not `fixing` - this is a trust violation)
-   - Error message: "Task modified [files] without reporting deviation in output.yaml. Plan specified: [planned files]"
-   - Do NOT create fix task - require task to be re-run with proper deviation reporting
-
-3. **Multiple tasks modifying same file:**
-   - If both tasks reported the deviation in Step 3: Acceptable coordination issue
-   - If either task didn't report: Both tasks FAILED
-
-**Why this is strict:** Tasks are required to self-report deviations. Not reporting is a contract violation, not an implementation error. This step ensures accountability.
-
-**Note:** The user may be asked about the same pattern across multiple batches. If this becomes disruptive, the user can set `unexpected-modifications: accept` in the manifest (not recommended for production use).
-
-### Step 5: Update and repeat
+### Step 4: Update and repeat
 
 Update `dispatch.yaml` with all status changes. Return to Step 1.
 
 Continue until all tasks have status `completed` or `failed`.
 
-If all tasks have status `failed` (or a mix of `failed` and `fixing` with no pending fix tasks), skip Phases 5/6/7. Set the run status to `failed` and report a failure summary to the user: which tasks failed, what errors occurred, and what fix attempts were made.
+If all tasks have status `failed`, skip Phases 5/6/7. Set the run status to `failed` and report a failure summary to the user: which tasks failed, what errors occurred, and what was attempted.
 
 ## Escalation
 
-### Task Fix Escalation (Execution Phase)
+### Critique Amendment Escalation
 
-The orchestrator tracks escalation by counting the fix depth for a given original task: the number of tasks in the manifest whose `fixes` field references that original task's ID. For example, if `1a-fix1` and `1a-fix2` both have `fixes: 1a-extract_auth_module`, the fix depth is 2. When a fix task references multiple originals via `fixes`, escalation uses the maximum fix depth across all referenced originals.
+The amendment loop in Step 3b tracks rounds per task. Escalation thresholds:
 
-- Depth 1-2: Fix silently, report progress in manifest
-- Depth 3: Notify user that a task is proving difficult, explain what is failing
-- Depth 4+: Ask user for guidance before continuing. Present the error, what has been tried, and options
+- Round 1-2: Fix silently, amend the commit
+- Round 3: Notify user that a task is proving difficult, explain what critique keeps finding
+- Round 4+: Ask user for guidance before continuing. Present the issues, what has been tried, and options
 
-This escalation policy applies to both verification failures and critique rejections. The counter is shared -- if critique produced fix1 and fix2, and then verification produces fix3, the user is notified at fix3 (depth 3) regardless of which mechanism created the fixes.
+### Verification Fix Escalation
 
-There is no hard retry limit. Escalation ensures the user is involved when things are not converging. Note: when a fix task is itself rejected by critique and a new fix task is created, both contribute to the fix depth. This is conservative -- it may over-count relative to the number of distinct fix attempts, but ensures the user is involved sooner rather than later.
+The orchestrator tracks fix rounds for Phase 5 verification failures. One round = one complete pass through the fix loop (steps 1 through 5 in "Attribution and Fix Loop", with step 6 being the loop control), regardless of how many levels were rebuilt or how many internal critique re-runs occurred within that pass.
+
+- Round 1-2: Fix silently
+- Round 3: Notify user that verification is proving difficult, explain what is failing
+- Round 4+: Ask user for guidance before continuing. Present the error, what has been tried, and options
+
+There is no hard retry limit. Escalation ensures the user is involved when things are not converging.
 
 ### Plan Critique Escalation (Pre-Execution)
 
@@ -1244,156 +1274,106 @@ Save output to `dispatch/<run-name>/final-build.log`
 
 Compare final build results to `baseline-build.log` (captured at dispatch start):
 
-1. **If final build passes and baseline passed**: Success, proceed to Phase 6
+1. **If final build passes and baseline passed**: Success, proceed to Phase 6 (commit consolidation)
 2. **If final build fails and baseline failed with same errors**: No regression introduced, proceed to Phase 6
 3. **If final build has NEW failures not in baseline**: Regression introduced, enter fix loop
 
 ### Attribution and Fix Loop
 
-When regressions are detected:
+When regressions are detected, the orchestrator attributes failures to tasks, fixes them, and rebuilds commits — the same amend-in-place principle as the Step 3b amendment loop, but across levels.
 
 1. **Attribute failures to tasks**: Launch a subagent (general or explore agent) to analyze:
    - Which files have errors
-   - Which tasks modified those files
+   - Which tasks modified those files (using `commit-sha` and `files-modified`)
    - Map errors to responsible task(s)
    - Save attribution to `dispatch/<run-name>/failure-attribution.md`
 
-2. **Create fix tasks**: For each task with attributed failures
-   - Mark original task as `fixing`
-   - Create fix task with error details and attribution
+2. **Mark originals**: For each task with attributed failures, transition status from `completed` to `fixing` with `fixing-source: verification`
 
-3. **Re-run Phase 4**: Execute fix tasks through normal dispatch flow
+3. **Fix phase** — for each affected task (serialized, same working tree):
+   a. Spawn a fix agent (same agent type as the original task) with:
+      - The build/test failures attributed to this task from `failure-attribution.md`
+      - The task's `plan.md` (original objective for context)
+      - The committed diff (`git show <commit-sha>`)
+      - For cross-task interactions: include context from all attributed tasks
+   b. The fix agent updates the task's `files-modified` in `output.yaml` if it modified new files
+   c. Re-run the build gate
 
-4. **Re-verify**: Run full build again, compare to baseline
+4. **Rebuild commits from earliest affected level forward:**
+   a. Identify the earliest level containing an affected task
+   b. `git reset` (mixed) to the pre-level boundary SHA from `level-boundaries` for that level. The boundary for the earliest affected level is always valid — it points to the commit before that level's work, which is not affected by the rebuild.
+   c. Re-create all commit units from that level through the final level, in topological order, following the same process as Step 3a+ (git add files per unit, commit, record SHA)
+   d. **Update `level-boundaries`** for all rebuilt levels: after committing all units for level N, the current HEAD is the new pre-level boundary for level N+1. Record this in `level-boundaries`. This prevents stale boundaries if a subsequent fix loop iteration targets a different level.
+   e. Update `commit-sha` for all rebuilt tasks. Re-mark all rebuilt tasks as `committed`.
+   f. **Re-run critique** (Step 3b) for each rebuilt level that has critique enabled.
 
-5. **Repeat** until final build matches baseline (no new failures)
+      **If critique passes for all levels:** proceed to step 5 (re-verify).
 
-### Fix Loop Details
+      **If critique finds blocking issues at any level:** do NOT use the single-level amendment loop from Step 3b. The amendment loop assumes no downstream commits exist, which is false here — downstream levels already have commits from step 4c. Instead:
 
-The fix loop handles regressions detected in Phase 5:
+      1. For each task with blocking critique issues, mark `fixing` with `fixing-source: critique`
+      2. Spawn fix agents for the affected tasks (serialized, same as Step 3b amendment loop step 1): provide the critique issues, the task's `plan.md`, and the committed diff
+      3. Fix agents update `files-modified` in `output.yaml` if they touched new files
+      4. Re-run the build gate for each fix
+      5. Restart this rebuild step (step 4) from the earliest level that had critique failures — this rebuilds that level's commits and all downstream levels on top of the corrected code
+      6. Re-run critique again for all rebuilt levels (re-entering this step 4f)
 
-1. **Attribution subagent analyzes**:
-   - Reads `baseline-build.log` and `final-build.log`
-   - Identifies new failures (not present in baseline)
-   - Maps failures to files
-   - Maps files to tasks that modified them
-   - Writes `failure-attribution.md` with analysis
+      This inner loop counts toward **critique amendment escalation** (not verification fix escalation). If a task accumulates amendment rounds across both normal execution and Phase 5 rebuilds, the total counts toward the same escalation threshold (round 3 notify, round 4+ ask user). The outer fix loop iteration (steps 1-5) counts separately toward verification fix escalation.
 
-2. **Mark originals**: For each task with attributed failures, transition status from `completed` to `fixing`
-
-3. **Create fix tasks**: See Fix Task Creation section
-
-4. **Execute fixes**: Re-enter Phase 4 (Steps 1-5)
-   - Fix tasks run normally
-   - Include critique if enabled
-   - Step 3c transitions originals to `completed` when fixes succeed
+      **Resume during this nested operation:** if interrupted while fixing critique issues during a Phase 5 rebuild, the affected tasks will be in `fixing` with `fixing-source: critique` and `commit-sha` pointing to a potentially stale SHA. The resume logic for `fixing` + `fixing-source: critique` handles this: check if `commit-sha` exists in git log, rebuild if needed, re-enter critique.
 
 5. **Re-verify**: Run full build again, compare to baseline
    - If matches baseline: exit loop, proceed to Phase 6
    - If new failures remain: return to step 1
 
-6. **Cascade check**: If a fix changed interfaces affecting downstream tasks:
-   - Attribution subagent detects cross-task failures
-   - Attributes to both the fix task and affected downstream tasks
-   - Create fix tasks for all involved parties
+6. **Repeat** until verification passes or escalation triggers user intervention
 
-7. **Repeat** until verification passes or escalation triggers user intervention
+## Fix Approach
 
-## Fix Task Creation
+Both critique-driven fixes (Step 3b amendment loop) and verification-failure fixes (Phase 5 fix loop) use the same approach: spawn a fix agent to correct the issues, then rebuild commits from the affected level forward. Neither mechanism creates separate "fix tasks" in the manifest — fixes are amendments to existing tasks' commits, not new entries in the DAG.
 
-This section applies to fix tasks created by both critique rejection (Step 3b) and verification failure (Phase 5 fix loop).
+This means the manifest's task list only contains planned tasks. Fix work is tracked through:
+- The task's status (`fixing` → `committed` → `completed` after rebuild)
+- Amendment round gate files (`level<N>-amend-round<R>-gate-critique.yaml`)
+- Phase 5 fix loop artifacts (`failure-attribution.md`, `final-build.log`)
 
-### Naming
+## Phase 6: Commit Consolidation
 
-Fix tasks use the format `<original-level><original-sequence>-fix<n>-<description>`:
-- `1a-fix1-resolve_critique_issues`
-- `1a-fix2-handle_error_edge_case`
-
-The orchestrator determines `<n>` by counting existing fix tasks for the same original in the manifest and adding one. When a fix task references multiple originals (cross-task fix), the prefix uses the first original listed in `fixes` (alphabetically by task ID), and `<n>` is determined by counting all existing fix tasks whose `fixes` field contains any of the referenced originals, then adding one.
-
-### Manifest entry
-
-```yaml
-# Single-task fix
-- id: 1a-fix1-resolve_critique_issues
-  agent: general
-  depends-on: [1a-extract_auth_module]
-  receives: []
-  fixes: 1a-extract_auth_module
-  status: pending
-  commit-group: auth         # inherited from the task being fixed
-
-# Cross-task fix (verification failure involving multiple tasks)
-- id: 1a-fix2-align_auth_interface
-  agent: general
-  depends-on: [1a-extract_auth_module, 2a-integrate_modules]
-  receives: []
-  fixes: [1a-extract_auth_module, 2a-integrate_modules]
-  status: pending
-```
-
-Key fields:
-- `fixes`: references the original planned task ID or a list of IDs (not previous fix tasks). When this fix task completes, the execution engine (Step 3c) transitions each referenced original task from `fixing` to `completed`. Use a list when a single fix addresses a cross-task interaction (e.g., mismatched interfaces between two tasks).
-- `depends-on`: includes the original task(s) being fixed. Since the originals have status `fixing` and this task has a `fixes` field, Step 1 treats those dependencies as satisfied. Do NOT include previous fix tasks (e.g., `1a-fix1`) in `depends-on` -- they may have status `failed`, which would deadlock the new fix. Ordering between fix attempts is implicit: the orchestrator creates fix tasks sequentially, so `1a-fix2` is only created after `1a-fix1` has finished and failed. When a verification failure involves multiple tasks (cross-task interaction), the fix task's `depends-on` should include all attributed original tasks, and the plan should reference relevant output from all of them.
-- `receives: []`: fix tasks MUST set `receives: []` explicitly. Omitting this field would cause `receives` to default to `depends-on`, which would inject the original task's `output.yaml` -- a document that claims `status: completed` despite the task having been rejected. Instead, all context is included directly in the fix task's `plan.md` (see Plan content below).
-- `commit-group`: inherited from the original task's `commit-group`. If the original had no group, the fix task has no group. When `fixes` is a list and the referenced originals have different `commit-group` values, the fix task has no group (it gets its own commit under the `grouped` strategy). If all referenced originals share the same group, the fix task inherits it.
-
-### Plan content
-
-The fix task's `plan.md` includes:
-- The error output or critique issues that triggered the fix
-- The original task's objective (for context)
-- The original task's upstream context (from its `receives` chain -- the orchestrator looks up what the original task received and includes the same upstream context in the fix task's plan)
-- Specific instructions on what to fix
-
-### Directory
-
-Each fix task gets its own directory as a scratchpad, following the naming convention: `1a-fix1-resolve_critique_issues/plan.md`.
-
-## Phase 6: Commits
-
-After all verification passes, orchestrate commits for the changes.
+Commits are created incrementally during execution (Step 3a+ commits each task or commit-group's work at the level fan-in). By the time Phase 6 runs, every completed task already has a commit with its SHA recorded in `commit-sha`.
 
 ### Commit strategies
 
 | Strategy | Behavior |
 |---|---|
-| `per-task` | One commit per completed task, in topological order. See note below on shared files. |
-| `single` | All changes in one commit. Message summarizes the overall goal. |
-| `grouped` | Tasks sharing a `commit-group` value go into one commit. Tasks without a group get their own. Fix tasks inherit `commit-group` from the task they fix. |
-
-**`per-task` and shared files**: Since all tasks run before commits are created, `git add` stages the file's current (final) state, not intermediate states. When dependent tasks modify the same file, the file is attributed to the **last task in topological order** that modified it. Earlier tasks' commits will not include that file. This means `per-task` is a logical attribution of the commit message, not a reconstruction of intermediate file states. Reverting an earlier task's commit will not revert all changes that task made if some of its files were attributed to a later commit. Fix tasks are ordered after all originals they fix (their `depends-on` edges determine topological position naturally) and will typically absorb the files they fixed, but the general file attribution rule (last in topological order) still applies. If a task's commit would contain zero files (all attributed to later tasks), skip that commit. If a run involved fix tasks and clean commit history matters, prefer the `single` or `grouped` strategy instead.
+| `per-task` (default) | No action needed — each task has its own commit from Step 3a+. Record final commit list in `results.commits`. |
+| `grouped` | No action needed — tasks sharing a `commit-group` were already committed together in Step 3a+. Record final commit list in `results.commits`. |
+| `single` | Squash all existing commits into one. Derive message from the `goal` field in the manifest, using `message-source` as guidance for tone. Record SHA in `results.commits`. |
 
 ### Approval modes
 
 | Mode | Behavior |
 |---|---|
-| `ask-once` (default) | Present the full commit plan (all commits with files and messages). User approves or adjusts, then all commits are created. |
-| `ask-each` | Present each commit individually for approval. User can approve, edit the message, or skip. |
-| `auto` | Commits are created without user interaction. Verification already passed. |
+| `ask-once` (default) | For `per-task`/`grouped`: present the commit list for review before proceeding. For `single`: present the squash plan, wait for approval before squashing. |
+| `ask-each` | Present each final commit individually for review before proceeding. |
+| `auto` | Proceed without user interaction. |
 
-### Commit phase steps
+For `per-task`/`grouped`, commits already exist — approval is a review gate, not a creation gate. If the user objects to a commit, they can request manual intervention (revert, amend, reorder) outside of dispatch. For `single`, the squash has not happened yet, so the user can abort before it occurs.
+
+### Consolidation steps
 
 1. Read commit strategy and approval mode from manifest
-2. Sort tasks by topological order, breaking ties alphabetically by directory name (or group by `commit-group`)
-3. Build the commit plan:
-   - `per-task`: each task becomes one commit using its `files-modified`
-   - `grouped`: merge `files-modified` across tasks in the same group
-   - `single`: merge all `files-modified` into one commit
-4. Generate commit messages:
-    - `message-source: objective`: derive from the task's plan.md objective
-    - `message-source: notes`: derive from the task's output.yaml notes
-    - For `grouped` commits, synthesize the objectives/notes of all tasks in the group into a single message. For `single` commits, derive the message from the `goal` field in the manifest, using `message-source` as guidance for tone.
-5. Apply approval mode:
-   - `ask-once`: present full commit plan, wait for approval
-   - `ask-each`: present each commit, wait for approval
-   - `auto`: proceed immediately
-6. Execute commits: `git add <files>` then `git commit` for each unit
-7. Record commit SHAs in `dispatch.yaml` under `results.commits` (list of `{sha, message, files, tasks}`)
+2. **`per-task` / `grouped`**: Collect all distinct `commit-sha` values from completed tasks in topological order. Present to user per approval mode. Record in `results.commits`.
+3. **`single`**: Squash all commits into one using `git reset --soft` to the pre-dispatch baseline (`level-boundaries[1]`, the SHA before the first level's commits) followed by a single `git commit`. Present squash plan per approval mode. Record SHA in `results.commits`.
+
+### Resume during Phase 6
+
+If the process is interrupted during Phase 6:
+- **`per-task` / `grouped`**: Phase 6 is idempotent (just records existing SHAs). Re-run it.
+- **`single`**: Check the number of commits since the pre-dispatch baseline. If only one commit exists, the squash completed — record it and proceed. If multiple per-task commits still exist, the squash was not started or was interrupted — restart the squash.
 
 ## Phase 7: Completion
 
-When all tasks are completed, verification passes, and commits are done:
+When all tasks are completed, verification passes, and commit consolidation is done:
 
 1. Update `dispatch.yaml` status to `completed`
 2. Report a summary:
@@ -1441,22 +1421,13 @@ This section describes how to resume a dispatch run. **Note:** This logic is inv
 2. Handle interrupted tasks based on status:
    - `completed`: skip
    - `dispatched`: check for `output.yaml`. If exists, process it; else reset to `pending`
+   - `committed`: task was committed but critique hasn't run (or was interrupted). Check if `commit-sha` exists in git log. If yes, proceed to Step 3b (critique). If commit is missing, reset to `pending`.
    - `failed`: present at Checkpoint, ask to retry or skip
-   - `fixing`: check associated fix tasks:
-     - `dispatched`: check for `output.yaml`
-     - `completed` but parent still `fixing`: transition parent to `completed`
-     - `failed`: present at Checkpoint, ask to retry or skip
-     - `pending`: leave as-is
-     - No fix task exists: treat original as `failed`
+   - `fixing`: the fix-and-rebuild cycle was interrupted. Check `fixing-source` to determine which mechanism to re-enter:
+     - `critique`: the Step 3b amendment loop was interrupted. Check if `commit-sha` exists in git log. If yes, rebuild the level's commits and re-enter the amendment loop (Step 3b). If the commit is missing, reset the task and all tasks at its level to `pending`.
+     - `verification`: the Phase 5 fix loop was interrupted. Re-enter Phase 5 (re-run full build, compare to baseline, continue fix loop if regressions remain).
    - `pending`: proceed normally
 3. After handling interrupted tasks, proceed from Phase 4, Step 1
-
-**If `results.commits` is non-empty but status is `in-progress`:**
-- Interruption occurred during Phase 6
-- Check which commits exist in git log
-- Skip existing commits
-- Continue committing remaining tasks
-- If all commits exist: proceed directly to Phase 7
 
 ### Clean Resume Requirements
 
@@ -1476,7 +1447,7 @@ The orchestrator and subagents agree on the following:
 | `plan.md` | Task instructions | Orchestrator | Subagent |
 | `output.yaml` | Task results (source of truth) | Subagent (Orchestrator for `explore` agents) | Orchestrator |
 | `level<N>-gate-critique.yaml` | Gate verdict for planned tasks at level N | Critique agent | Orchestrator |
-| `level<N>-fix-round<R>-gate-critique.yaml` | Gate verdict for fix round R at level N | Critique agent | Orchestrator |
+| `level<N>-amend-round<R>-gate-critique.yaml` | Gate verdict for amendment round R at level N | Critique agent | Orchestrator |
 | Task tool return | Diagnostic supplement (advisory) | Subagent | Orchestrator (diagnostics only) |
 | `dispatch.yaml` | Run state and DAG | Orchestrator | Orchestrator |
 | `mutation-test-*.log` (in task dir) | Mutation testing evidence | Critique agent | Human (paths stored in gate-critique.yaml for reference; orchestrator never reads directly) |
