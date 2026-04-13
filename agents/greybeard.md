@@ -1,7 +1,6 @@
 ---
 description: Seasoned engineer review of product, architecture, and implementation documentation
 mode: subagent
-model: opus
 color: "#6B7280"
 ---
 
