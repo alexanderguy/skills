@@ -397,6 +397,31 @@ import type { Config } from "../types.ts";
 
 Note: Some environments (like Deno or Node.js with `"type": "module"`) require explicit extensions. Follow project conventions when extensions are mandated by the runtime.
 
+### Dynamic Imports
+
+Dynamic `import()` expressions should be used sparingly. They exist for genuinely dynamic scenarios where the module to load is not known at authoring time or where a module must be conditionally loaded at runtime (e.g., optional dependencies, platform-specific implementations, or plugin systems).
+
+Dynamic imports are **not** a shortcut for avoiding updates to multiple static import sites. If you need to change what a module exports or restructure imports across files, do the work of updating each file. A dynamic import that wraps a static dependency just to centralize the import path is adding indirection and losing type safety for no real benefit.
+
+```typescript
+// Bad - using dynamic import to avoid updating imports elsewhere
+const { createHandler } = await import("./handler");
+
+// Good - static import, updated everywhere it's used
+import { createHandler } from "./handler";
+
+// Good - genuinely dynamic: loading a plugin by name at runtime
+const plugin = await import(`./plugins/${pluginName}`);
+
+// Good - conditional loading of an optional dependency
+let sharp;
+try {
+  sharp = await import("sharp");
+} catch {
+  // sharp not installed, fall back to basic image handling
+}
+```
+
 ## Async Patterns
 
 ### Factory Functions
