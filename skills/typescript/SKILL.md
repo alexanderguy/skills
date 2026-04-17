@@ -399,26 +399,26 @@ Note: Some environments (like Deno or Node.js with `"type": "module"`) require e
 
 ### Dynamic Imports
 
-Dynamic `import()` expressions should be used sparingly. They exist for genuinely dynamic scenarios where the module to load is not known at authoring time or where a module must be conditionally loaded at runtime (e.g., optional dependencies, platform-specific implementations, or plugin systems).
+Dynamic `import()` expressions should be used sparingly. They exist for genuinely dynamic scenarios where the module to load is not known at authoring time (e.g., plugin systems where the module path is constructed from a variable) or where a module must be conditionally loaded at runtime (e.g., optional dependencies that may not be installed).
 
-Dynamic imports are **not** a shortcut for avoiding updates to multiple static import sites. If you need to change what a module exports or restructure imports across files, do the work of updating each file. A dynamic import that wraps a static dependency just to centralize the import path is adding indirection and losing type safety for no real benefit.
+If you know which module you need, use a static `import` at the top of the file. Do not use `await import()` inline next to your code change because it is convenient — that is a static dependency with worse type safety and unnecessary indirection. Add the import statement to the top of the file where it belongs.
 
 ```typescript
-// Bad - using dynamic import to avoid updating imports elsewhere
+// Bad - lazy inline import of a known module
 const { createHandler } = await import("./handler");
 
-// Good - static import, updated everywhere it's used
+// Good - static import at the top of the file
 import { createHandler } from "./handler";
 
-// Good - genuinely dynamic: loading a plugin by name at runtime
+// Good - genuinely dynamic: the module path is not known at authoring time
 const plugin = await import(`./plugins/${pluginName}`);
 
 // Good - conditional loading of an optional dependency
-let sharp;
+let sharp: typeof import("sharp") | undefined;
 try {
   sharp = await import("sharp");
-} catch {
-  // sharp not installed, fall back to basic image handling
+} catch (err) {
+  logger.warn("sharp not installed, falling back to basic image handling", { cause: err });
 }
 ```
 
