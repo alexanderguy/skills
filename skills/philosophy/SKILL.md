@@ -64,6 +64,8 @@ If the answer to (3) is yes, fix that layer — not a downstream consumer. If yo
 
 If you have made two or more fix commits to the same subsystem without resolving the issue, you are symptom-chasing. Describe the constraint violation and ask where it should be fixed.
 
+**It's almost never a bug in the compiler — until it is.** Exhaust every possibility in your own code before blaming the toolchain. But never fully dismiss the possibility; sometimes it actually is.
+
 ## Backwards Compatibility
 
 Backwards compatibility is not inherently virtuous. It depends entirely on context.
