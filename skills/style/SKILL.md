@@ -158,6 +158,14 @@ Any code from outside the organization requires careful attribution and licensin
 
 If modifications to external code are needed, make them in a separate follow-up commit with clear explanation of what changed and why.
 
+## Data Validation
+
+Never trust data from outside the program. All external input — user submissions, API responses, file contents, environment variables, query parameters, message payloads — must be validated at the boundary where it enters the system. Parse it, check it, and reject it if it's wrong. Once data has crossed the boundary and been validated, internal code can trust it without re-checking.
+
+This means validation logic lives at the edge: HTTP handlers, CLI argument parsers, message consumers, file readers, and configuration loaders. It does not live deep inside business logic, scattered across internal functions, or deferred until the data happens to cause a failure somewhere downstream.
+
+If invalid data can travel through multiple layers before something finally breaks, the validation boundary is in the wrong place.
+
 ## Build Verification
 
 Always run the full build command before declaring any task complete.
