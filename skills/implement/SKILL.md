@@ -39,9 +39,22 @@ Before writing any code, describe your implementation approach to Greybeard and 
 
 Use the `@greybeard` subagent for this step.
 
-### Step 2: Implement
+### Step 2: Implement and Test
 
-Make the changes. Follow the approach reviewed in Step 1.
+The order of operations depends on whether you're fixing a bug or building a feature. In both cases, follow the repository's existing test conventions — look at how existing tests are structured, where they live, what framework they use, and match that style. If the repository has no existing tests, ask the caller what test framework and conventions to use before proceeding.
+
+**For bug fixes (test-first):**
+1. Write a test that reproduces the bug.
+2. Run the test and verify it **fails**. If it doesn't fail, you don't understand the bug well enough to fix it. Go back and refine the test until it demonstrates the broken behavior.
+3. Implement the fix, following the approach reviewed in Step 1.
+4. Run the test again and verify it **passes**. If it doesn't pass, your fix is incomplete.
+
+**For new features:**
+1. Implement the feature, following the approach reviewed in Step 1.
+2. Write a test that exercises the new functionality and asserts on the expected behavior. The test should verify that the code works as designed and implemented, not just that it doesn't crash.
+3. Run the test and verify it **passes**.
+
+Keep the test focused on the behavior introduced by this commit. Don't test unrelated functionality. The test is part of the deliverable, not an afterthought.
 
 Keep the scope tight to what was discussed. If you discover additional work is needed, finish the current commit's scope first and note the additional work for a future commit.
 
@@ -57,7 +70,7 @@ Run `make` (or the project's equivalent full pipeline: format, lint, build, test
 
 ### Step 4: Commit
 
-Create the commit. Follow the commit message conventions from the `style` skill.
+Create the commit. Follow the commit message conventions from the `style` skill. Include the test in the same commit as the implementation — they are one logical unit of work.
 
 ### Step 5: Critique Loop
 
