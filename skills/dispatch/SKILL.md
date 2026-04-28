@@ -388,6 +388,11 @@ Relevant codebase context, file locations, patterns to follow.
 
 ## Constraints
 
+- **Do NOT run any mutating git operations.** No `git add`, `git commit`,
+  `git checkout`, `git stash`, or anything that changes repository state.
+  The orchestrator handles all git operations after your task completes.
+  Multiple tasks run in parallel in the same worktree — git mutations from
+  any task will corrupt the tree for all of them.
 - Rules the subagent must follow
 - Files it must NOT touch
 - Patterns it must adhere to
@@ -720,7 +725,7 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 
 **Tasks that share mutable state cannot run in parallel.** When tasks operate within the same worktree/repository and affect shared resources, they MUST be serialized via `depends-on` edges, even if they don't directly depend on each other's outputs. Common examples:
 
-- **Mutating git operations**: Tasks that commit (`git commit`), checkout branches (`git checkout`), modify the git index (`git add`, `git rm`), or change repository state must be serialized. Read-only operations (`git status`, `git log`, `git diff`) are safe to run in parallel. Two simultaneous `git commit` operations will corrupt the repository state.
+- **Mutating git operations**: Subagents must not run any mutating git operations (`git commit`, `git add`, `git checkout`, `git stash`, etc.). All git mutations are handled by the orchestrator at the level fan-in (Step 3a+). Read-only operations (`git status`, `git log`, `git diff`) are safe.
 - **Build systems**: Tasks running `make`, `npm run build`, or similar must be serialized if they write to shared build artifacts, caches, or output directories.
 - **File writes**: Tasks at the same level writing to the same file must be merged or serialized (caught as a blocking issue in the Coherence check). Tasks at different levels are already serialized by the DAG and do not conflict.
 - **Test databases**: Tasks that reset or mutate shared test databases must be serialized.
@@ -885,8 +890,9 @@ For each task:
 2. If `receives` (or `depends-on` when `receives` is omitted) references upstream tasks, read their `output.yaml` files and inject the content into the subagent's prompt as upstream context. Do not mutate `plan.md` on disk -- the upstream context is only included in the prompt sent to the subagent.
 3. Tell the subagent the repository root path and the relative path to its task directory. Example: "Repository root: /home/user/project. Your task directory: dispatch/migrate-routes/1a-extract_auth_module/. Write output.yaml to your task directory."
 4. **Explicitly instruct the subagent to read its plan.md file.** Include text in the prompt such as: "You MUST read your complete plan.md file from your task directory before proceeding. The summary provided here is for context only. If any part of the plan is unclear, contradictory, or you cannot understand what is being asked, STOP and report failure."
-5. Update the task's status to `dispatched` in `dispatch.yaml`
-6. Dispatch via the Task tool using the `agent` type from the manifest
+5. **Explicitly prohibit git mutations.** Include text in the prompt such as: "Do NOT run git add, git commit, git checkout, git stash, or any command that mutates git state. Leave your changes uncommitted. The orchestrator commits after all tasks in your level complete."
+6. Update the task's status to `dispatched` in `dispatch.yaml`
+7. Dispatch via the Task tool using the `agent` type from the manifest
 
 For `explore` agents (read-only): the orchestrator reads the Task tool return message as the task's output and writes `output.yaml` on the agent's behalf, since explore agents cannot write files.
 
@@ -1044,6 +1050,7 @@ Amendments are processed per commit unit (see Step 3a+). Tasks that share a `com
       - The `plan.md` files for all tasks in the unit (original objectives for context)
       - The committed diff (`git show <commit-sha>`)
       - Instruction: fix only the specific issues identified by critique, do not expand scope
+      - Instruction: do not run any mutating git operations — leave changes uncommitted for the orchestrator to rebuild
    b. The fix agent updates the task's `files-modified` in `output.yaml` if it modified files not already listed (the rebuild step uses `files-modified` to know which files to commit)
    c. Re-run the build gate (full pipeline: format, lint, build, test)
       - If the build fails, the fix agent must resolve before proceeding
@@ -1355,6 +1362,7 @@ When regressions are detected, the orchestrator attributes failures to tasks, fi
       - The task's `plan.md` (original objective for context)
       - The committed diff (`git show <commit-sha>`)
       - For cross-task interactions: include context from all attributed tasks
+      - Instruction: do not run any mutating git operations — leave changes uncommitted for the orchestrator to rebuild
    b. The fix agent updates the task's `files-modified` in `output.yaml` if it modified new files
    c. Re-run the build gate
 
@@ -1371,7 +1379,7 @@ When regressions are detected, the orchestrator attributes failures to tasks, fi
       **If critique finds blocking issues at any level:** do NOT use the single-level amendment loop from Step 3b. The amendment loop assumes no downstream commits exist, which is false here — downstream levels already have commits from step 4c. Instead:
 
       1. For each task with blocking critique issues, mark `fixing` with `fixing-source: critique`
-      2. Spawn fix agents for the affected tasks (serialized, same as Step 3b amendment loop step 1): provide the critique issues, the task's `plan.md`, and the committed diff
+      2. Spawn fix agents for the affected tasks (serialized, same as Step 3b amendment loop step 1): provide the critique issues, the task's `plan.md`, the committed diff, and the git mutation prohibition
       3. Fix agents update `files-modified` in `output.yaml` if they touched new files
       4. Re-run the build gate for each fix
       5. Restart this rebuild step (step 4) from the earliest level that had critique failures — this rebuilds that level's commits and all downstream levels on top of the corrected code
@@ -1531,7 +1539,7 @@ From the philosophy skill:
 
 **Not all tasks can run in parallel.** Tasks sharing mutable state within the same repository must be serialized:
 
-- **Mutating git operations** (commit, checkout, stash, add, rm) modify global repository state and must be serialized. Read-only git operations (status, log, diff) are safe to run in parallel.
+- **Git operations** — subagents must not run mutating git commands. The orchestrator owns all git state. Read-only git operations (status, log, diff) are safe.
 - Build systems write to shared output directories and caches
 - File operations targeting the same paths create race conditions
 
