@@ -152,11 +152,33 @@ as you would speak to a colleague:
 - Do not soften feedback to the point of obscuring it. The author should
   understand whether something needs to change or is merely a thought.
 
+## Commit-Message Coherence
+
+Each commit's message is a claim about what the commit contains. Verify that
+claim. For every commit on the branch, read the message, read the diff
+(`git show <sha>`), and confirm that the two match.
+
+If a commit contains material changes that are unrelated to its message —
+files touched that have nothing to do with the stated purpose, unmentioned
+behavioral changes, or new functionality that the message does not describe —
+flag it. Undescribed changes hiding inside a commit undermine the reviewability
+and auditability of the history.
+
+This includes whitespace or formatting changes to code that is not otherwise
+being modified. Drive-by cleanup belongs in its own commit — its presence in
+an unrelated commit is itself a problem.
+
+Do not require that every modified line be individually narrated in the message.
+The message is a summary. But if someone reading only the message would be
+surprised by what the diff actually contains, that is a problem worth raising.
+
 ## Review Checklist
 
 1. Determine the base branch using the methods in "Base Branch Determination"
 2. Run `git log --oneline <base>..HEAD` to understand the scope
 3. Run `git diff <base>...HEAD --stat` to see which files changed
 4. Review each changed file, focusing only on lines modified by the branch
-5. Check that new code follows project conventions
-6. Summarize findings with specific file:line references
+5. Verify that each commit's diff matches its commit message (see
+   "Commit-Message Coherence") — this can be done during or after step 4
+6. Check that new code follows project conventions
+7. Summarize findings with specific file:line references
