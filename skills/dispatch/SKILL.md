@@ -64,6 +64,7 @@ This phase runs when dispatch is loaded with a spec.md file as input. The spec s
 2. **Extract quality gates from loaded skills:**
    - From `style`: Per-task build verification, per-task test verification for test tasks, never work around failing builds
    - From `philosophy`: Tests as first-class verification, commits that enable debugging
+   - Bugfix tasks use test-first workflow (test must fail before fix, pass after); feature tasks include tests for new behavior
    - From project-specific docs (CONVENTIONS.md, DEV.md, etc.): Project requirements
    - Create a checklist of requirements for this specific plan
 3. Break the goal into discrete tasks, each small enough for a single subagent
@@ -72,27 +73,32 @@ This phase runs when dispatch is loaded with a spec.md file as input. The spec s
    - `explore` for research and analysis (read-only)
    - `intern` for well-defined implementation tasks (clear requirements, straightforward changes, mechanical work)
    - `general` for complex implementation requiring judgment (architectural decisions, open-ended problems, novel solutions)
-6. Detect project verification commands from package.json, Makefile, or similar
-7. **Add per-task verification to task plans:**
+6. **Classify each task as `feature` or `bugfix`:**
+   - `bugfix`: the task fixes incorrect behavior — something that works wrong today
+   - `feature`: everything else (new functionality, refactoring, configuration, tests for existing code)
+   - This classification determines the test workflow the subagent must follow (see plan.md template)
+   - When unsure, default to `feature` — test-first is only required when there is a known broken behavior to reproduce
+7. Detect project verification commands from package.json, Makefile, or similar
+8. **Add per-task verification to task plans:**
    - Tasks that produce compiled code (C, Rust, TypeScript, etc.): add build command to verify compilation
    - Tasks that write tests: add test command to verify the tests actually pass
    - Tasks that modify critical paths: add relevant subset of test suite
    - This catches failures early, at the task level, rather than discovering 15 broken tasks at Phase 5
-8. **Choose commit strategy:**
+9. **Choose commit strategy:**
    - Use `per-task` when debuggability is critical (enables bisection, isolates failures) - **this is the default**
    - Use `grouped` only when history cleanliness matters AND comprehensive Phase 5 verification will catch all issues
    - Grouped commits make debugging harder: if Phase 5 fails, you can't tell which of 5 bundled tasks broke it
-9. **Decide which tasks need critique:**
-   - Complex tasks (general agent, complicated objectives) → critique enabled
-   - Medium complexity intern tasks → critique enabled
-   - Simple intern tasks → critique disabled (trust self-report)
-   - When unsure, consult greybeard about complexity
-   - Mark in manifest with `critique.enabled: true/false` per task
-10. **Verify plan against quality gates checklist** - ensure requirements from loaded skills are satisfied
-11. **Present quality gate verification to user** before presenting the full plan (see template below)
+10. **Decide which tasks need critique:**
+    - Complex tasks (general agent, complicated objectives) → critique enabled
+    - Medium complexity intern tasks → critique enabled
+    - Simple intern tasks → critique disabled (trust self-report)
+    - When unsure, consult greybeard about complexity
+    - Mark in manifest with `critique.enabled: true/false` per task
+11. **Verify plan against quality gates checklist** - ensure requirements from loaded skills are satisfied
+12. **Present quality gate verification to user** before presenting the full plan (see template below)
     - Include which tasks will be critiqued
     - User can request additional tasks be critiqued if they see something missed
-12. Create the dispatch directory structure, manifest, and task files (Phase 2)
+13. Create the dispatch directory structure, manifest, and task files (Phase 2)
 
 ### Agent Type Selection Guide
 
@@ -133,6 +139,10 @@ From `style` skill:
 [ ] All code-producing tasks have build verification
 [ ] All test-writing tasks verify tests pass
 [ ] No workarounds for failing builds
+
+Test workflow:
+[ ] All bugfix tasks use test-first workflow (test fails before fix, passes after)
+[ ] All feature tasks include tests that verify the new behavior
 
 From `philosophy` skill:
 [ ] Tests treated as first-class verification
@@ -277,6 +287,7 @@ deviation-handling:
 
 tasks:
   - id: 1a-extract_auth_module
+    type: feature            # feature | bugfix
     agent: general           # general | intern | explore
     depends-on: []           # task IDs that must complete first
     receives: []             # task IDs whose output to inject (defaults to depends-on)
@@ -294,6 +305,7 @@ tasks:
     commit-group: ""         # optional; used with 'grouped' commit strategy
 
   - id: 2a-integrate_modules
+    type: feature
     agent: general
     depends-on: [1a-extract_auth_module, 1b-extract_logging_module]
     receives: [1a-extract_auth_module]  # only needs auth output; depends on logging for ordering only
@@ -321,6 +333,7 @@ The repository root is the nearest ancestor directory containing `.git`. The orc
 | Field | Required | Description |
 |---|---|---|
 | `id` | yes | Directory name. Format: `<level><sequence>-<description>`. |
+| `type` | yes (except `explore` agents) | Task classification: `feature` or `bugfix`. Determines the test workflow the subagent follows. Omit for `explore` tasks (they do not produce code or tests). |
 | `agent` | yes | Subagent type: `general`, `intern`, or `explore` |
 | `depends-on` | yes | Task IDs that must reach `completed` before this task starts (empty list if none). |
 | `receives` | no | Task IDs whose `output.yaml` to inject as context. Defaults to `depends-on`. Must be a subset of `depends-on`. Use to narrow injection when a task depends on many upstream tasks but only needs context from some. |
@@ -348,6 +361,7 @@ Each task's `plan.md`. The YAML frontmatter duplicates fields from `dispatch.yam
 ```markdown
 ---
 id: 1a-extract_auth_module
+type: feature
 depends-on: []
 agent: general
 ---
@@ -380,7 +394,46 @@ Relevant codebase context, file locations, patterns to follow.
 
 ## Verification
 
-How you will demonstrate this task is complete and correct:
+How you will demonstrate this task is complete and correct.
+
+### Test Workflow
+
+The order of implementation and testing depends on the task type (from the
+`type` field in the frontmatter). Follow the repository's existing test
+conventions — look at how existing tests are structured, where they live,
+what framework they use, and match that style. If the repository has no
+existing tests, report failure and ask the orchestrator what test framework
+and conventions to use.
+
+**For `bugfix` tasks (test-first):**
+1. Write a test that reproduces the bug.
+2. Run the test and verify it **fails**. Capture output to `pre-fix-test.log`.
+   If the test passes, you do not understand the bug well enough to fix it.
+   Refine the test until it demonstrates the broken behavior. If after two
+   attempts the test still passes, report failure — do not proceed with a fix
+   you cannot prove is necessary.
+3. Implement the fix.
+4. Run the test again and verify it **passes**. Capture output to
+   `verification.log`.
+
+The `pre-fix-test.log` is mandatory evidence. It proves the test actually
+catches the bug rather than vacuously passing regardless of the fix.
+
+**For `feature` tasks that introduce new behavior:**
+1. Implement the feature.
+2. Write a test that exercises the new functionality and asserts on the
+   expected behavior. The test should verify that the code works as designed,
+   not just that it does not crash.
+3. Run the test and verify it **passes**. Capture output to
+   `verification.log`.
+
+**For `feature` tasks that do not introduce new behavior** (refactors, config
+changes, test-only tasks, documentation): the test workflow above does not
+apply — there is no new behavior to write tests for. Use the appropriate
+verification level below instead. Refactors in particular must run the
+existing test suite after the change to prove nothing broke.
+
+### Verification Level
 
 **Level:** [automated | manual | review]
 
@@ -404,9 +457,10 @@ How you will demonstrate this task is complete and correct:
 **Evidence Requirements:**
 
 Before marking this task complete, you MUST:
-1. Execute the verification steps defined above
-2. Capture full output to evidence files in your task directory
-3. Write summary to output.yaml with references to evidence files
+1. Follow the test workflow for your task type (above)
+2. Execute the verification steps defined above
+3. Capture full output to evidence files in your task directory
+4. Write summary to output.yaml with references to evidence files
 
 Do NOT claim completion without running verification and capturing evidence.
 
@@ -478,7 +532,7 @@ Required fields:
 - `files-modified`: list of files you changed (paths relative to repo root)
 - `verification-summary`:
   - `level`: automated | manual | review
-  - `evidence-files`: list of evidence files in task directory (e.g., [`verification.log`, `test-results.json`])
+  - `evidence-files`: list of evidence files in task directory (e.g., [`verification.log`, `test-results.json`]; bugfix tasks must include `pre-fix-test.log`)
   - `result`: brief summary (e.g., "all 42 tests passed", "server responded with 200")
 - `deviations`: list of deviations from plan (empty list `[]` if none)
   - `type`: files_not_in_plan | approach_changed | scope_changed | constraint_violation | verification_changed
@@ -883,6 +937,7 @@ Tasks self-report their verification status. Check that the report is complete:
 1. **Check output.yaml exists** and has required fields including `verification-summary`
 2. **Check evidence files exist** in the task directory:
    - For automated: `verification.log`, potentially `test-results.json`
+   - For bugfix tasks: `pre-fix-test.log` (proves the test failed before the fix)
    - For manual: `manual-evidence.log`
    - For review: `verification.log`
 3. **Check evidence is not empty** - files have content, not just placeholder text
@@ -1084,6 +1139,10 @@ For each non-explore task, evaluate whether:
 - Constraints from the plan were respected
 - Verification was actually performed:
   - For automated: Check verification.log shows tests/builds were run
+  - For bugfix tasks (type: bugfix): Check pre-fix-test.log exists and shows
+    the test actually failing before the fix was applied. A pre-fix-test.log
+    that shows tests passing is invalid — it means the test does not catch the
+    bug.
   - For manual: Check manual-evidence.log demonstrates the task works
   - For review: Check verification.log shows compile/lint/tests were run
 - Verification evidence matches the summary in output.yaml
