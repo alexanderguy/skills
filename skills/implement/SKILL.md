@@ -19,15 +19,39 @@ The caller defines what work to do and where the commit boundaries are. This ski
 
 ## Tracking Progress
 
-Before starting implementation, use `TodoWrite` to create a task list from the caller's units of work. Each task should correspond to one commit-sized unit. As you complete the per-commit workflow for each unit, mark its task complete before moving on.
+Use `TaskCreate`, `TaskUpdate`, and `TaskList` to track progress throughout the workflow. These tools give the user real-time visibility into what you're doing.
 
-If new work is discovered during implementation (e.g., Greybeard suggests a preparatory refactor, or Critique reveals a missing edge case that warrants its own commit), add it to the task list as a new task.
+### Initial Planning
+
+Before starting implementation, use `TaskCreate` for each commit-sized unit of work from the caller's instructions:
+
+- **subject**: Clear imperative description of the unit of work
+- **description**: Enough context that you could pick it up cold
+- **activeForm**: Present continuous form for the spinner (e.g., "Refactoring HTTP client retry logic")
+
+### During the Per-Commit Workflow
+
+When you begin a unit of work, mark its task `in_progress` with `TaskUpdate`. As you move through the workflow steps, update the task's `activeForm` to reflect which step you're in:
+
+- **Step 1**: "Reviewing approach with Greybeard: {subject}"
+- **Step 2**: "Implementing: {subject}"
+- **Step 3**: "Running build gate: {subject}"
+- **Step 4**: "Committing: {subject}"
+- **Step 5**: "Running Critique loop: {subject}"
+
+When the commit lands and Critique is clean, mark the task `completed`.
+
+### Discovered Work
+
+If new work surfaces during implementation (Greybeard suggests a preparatory refactor, Critique reveals a missing edge case that warrants its own commit), create a new task with `TaskCreate` and work it through the full per-commit workflow.
 
 ## Workflow Per Commit
 
 For each logical unit of work that results in a commit, follow these steps in order. Do not skip steps.
 
 ### Step 1: Greybeard Review
+
+Mark the task `in_progress` and set `activeForm` to "Reviewing approach with Greybeard: {subject}".
 
 Before writing any code, describe your implementation approach to Greybeard and ask for feedback.
 
@@ -46,6 +70,8 @@ Before writing any code, describe your implementation approach to Greybeard and 
 Use the `@greybeard` subagent for this step.
 
 ### Step 2: Implement and Test
+
+Update `activeForm` to "Implementing: {subject}".
 
 The order of operations depends on whether you're fixing a bug or building a feature. In both cases, follow the repository's existing test conventions — look at how existing tests are structured, where they live, what framework they use, and match that style. If the repository has no existing tests, ask the caller what test framework and conventions to use before proceeding.
 
@@ -66,6 +92,8 @@ Keep the scope tight to what was discussed. If you discover additional work is n
 
 ### Step 3: Build Gate
 
+Update `activeForm` to "Running build gate: {subject}".
+
 Run `make` (or the project's equivalent full pipeline: format, lint, build, test).
 
 - If the build passes, move to Step 4
@@ -76,9 +104,13 @@ Run `make` (or the project's equivalent full pipeline: format, lint, build, test
 
 ### Step 4: Commit
 
+Update `activeForm` to "Committing: {subject}".
+
 Create the commit. Follow the commit message conventions from the `style` skill. Include the test in the same commit as the implementation — they are one logical unit of work.
 
 ### Step 5: Critique Loop
+
+Update `activeForm` to "Running Critique loop: {subject}".
 
 Ask Critique to review the committed change.
 
@@ -98,7 +130,7 @@ Ask Critique to review the committed change.
 
 ### Step 6: Next
 
-Mark the current task complete in the todo list. Move to the next unit of work and return to Step 1.
+Mark the current task `completed` with `TaskUpdate`. Move to the next unit of work and return to Step 1.
 
 ## Guidelines
 
