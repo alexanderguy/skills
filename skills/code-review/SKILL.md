@@ -1,7 +1,6 @@
 ---
 name: code-review
 description: Perform a code review or pull request review on a branch
-disable-model-invocation: true
 ---
 
 # Code Review
