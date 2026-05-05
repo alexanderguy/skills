@@ -17,6 +17,12 @@ This is a standalone skill, loaded on request. It is not part of dispatch. Use i
 
 The caller defines what work to do and where the commit boundaries are. This skill defines *how* each commit gets produced.
 
+## Tracking Progress
+
+Before starting implementation, use `TodoWrite` to create a task list from the caller's units of work. Each task should correspond to one commit-sized unit. As you complete the per-commit workflow for each unit, mark its task complete before moving on.
+
+If new work is discovered during implementation (e.g., Greybeard suggests a preparatory refactor, or Critique reveals a missing edge case that warrants its own commit), add it to the task list as a new task.
+
 ## Workflow Per Commit
 
 For each logical unit of work that results in a commit, follow these steps in order. Do not skip steps.
@@ -92,7 +98,7 @@ Ask Critique to review the committed change.
 
 ### Step 6: Next
 
-Move to the next unit of work. Return to Step 1.
+Mark the current task complete in the todo list. Move to the next unit of work and return to Step 1.
 
 ## Guidelines
 
