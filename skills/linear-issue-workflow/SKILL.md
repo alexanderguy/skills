@@ -81,51 +81,15 @@ All subsequent work happens in the worktree directory.
 
 ## Phase 4: Implement
 
-1. Use `TodoWrite` to track implementation tasks
-2. Implement changes, marking todos as complete as you go
-3. Write tests for new functionality
-4. Run the project's build/verification command
+Load the `implement` skill and follow its workflow for each logical unit of work.
 
-## Phase 5: Verify
+The implementation plan from Phase 2 defines what to build. Break it into commit-sized units and work through each one using the implement skill's per-commit discipline: Greybeard review, implement and test, build gate, commit, Critique loop.
 
-If the changes affect critical paths or integration points, run the project's test suite or integration tests as appropriate for the changes made.
+Keep commits focused. Each commit should represent one logical change that can be reviewed and understood independently.
 
-## Phase 6: Commit and PR
+## Phase 5: Push and PR
 
-### Squash commits if needed
-
-If you made multiple commits that should be one:
-
-```bash
-git reset --soft HEAD~<n> && git commit -m "<message>"
-```
-
-### Self-review
-
-Before pushing, load the `code-review` skill and perform a self-review of your changes. If serious issues are found that would prohibit merging, fix them before proceeding. Do not push until the review passes.
-
-After the review passes, ask the user for confirmation before pushing and creating the PR.
-
-### Post review to PR
-
-After creating the PR, post a summary of the code review as a comment:
-
-```bash
-gh pr comment <PR-NUMBER> --body "$(cat <<'EOF'
-## Self-Review Summary
-
-<summary of what was reviewed and any issues found/fixed>
-
-### Files Reviewed
-
-- `path/to/file.ts`: <brief assessment>
-
-### Issues Found and Resolved
-
-<list any issues found during self-review and how they were fixed, or "None">
-EOF
-)"
-```
+After all commits are complete, ask the user for confirmation before pushing and creating the PR.
 
 ### Push and create PR
 
@@ -166,7 +130,7 @@ EOF
 )"
 ```
 
-## Phase 7: Cleanup After Merge
+## Phase 6: Cleanup After Merge
 
 After the PR has been merged, clean up the worktree and local branch:
 
