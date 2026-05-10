@@ -1,6 +1,6 @@
 {
   "name": "alexanderguy-skills",
-  "description": "Development skills for code review and TypeScript conventions",
+  "description": "Engineering workflow skills: code style, review, refactoring, implementation, dispatch orchestration, and project management",
   "version": "1.17.0",
   "author": {
     "name": "Alexander Guy"
