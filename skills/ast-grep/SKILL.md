@@ -226,6 +226,43 @@ rule:
 | `any` | Any sub-rule must match (OR) |
 | `not` | Sub-rule must not match (NOT) |
 
+### Disambiguating same-named identifiers
+
+When the same identifier appears in multiple semantic contexts and you only want to match some of them, use these techniques:
+
+**By sibling content.** Match only when a sibling property has a specific value (e.g., only match `message` inside objects that also contain `type: "inference.done"`):
+
+```yaml
+rule:
+  kind: pair
+  has:
+    field: key
+    kind: property_identifier
+    regex: "^message$"
+  inside:
+    kind: object
+    has:
+      kind: pair
+      has:
+        field: value
+        regex: "inference\\.done"
+    stopBy: neighbor
+```
+
+**By descendant access chain.** Exclude matches that are part of a longer property chain (e.g., match `$X.data.message` but not `$X.data.message.headers`):
+
+```yaml
+rule:
+  pattern: $X.data.message
+  not:
+    inside:
+      pattern: $X.data.message.headers
+      stopBy: end
+fix: $X.data.turn
+```
+
+**By node kind.** Distinguish type-level vs value-level occurrences. Use `kind: property_signature` for interface/type definitions and `kind: pair` for object literal expressions — they share the same surface syntax but are different AST nodes.
+
 ### Transforms
 
 Derive new metavariables for use in `fix`:
@@ -268,6 +305,7 @@ When a pattern does not match what you expect:
    This shows you the node kinds in the source, which tells you what your real pattern needs to match against. Compare the AST of your pattern (step 1) with the AST of the source to find the mismatch.
 
 3. **Common causes of non-matches:**
+   - **Ambiguous parse:** The pattern is valid syntax but parsed as something you did not intend. ast-grep picks the first valid AST interpretation, which may not be what you meant. The most common case: `key: value` patterns (e.g., `message: AssistantTurn`) parse as a **labeled statement** (`message:` label + `AssistantTurn` expression), not a property signature or object pair. The pattern silently matches nothing (exit 1, no error). Use `--debug-query=pattern` — if the output shows `labeled_statement`, you have hit this. Fix by wrapping in braces for object context (`{ message: $VAL }`) or using a YAML rule with `kind: property_signature` or `kind: pair` to match the intended node type.
    - Optional syntax missing from pattern (add `$$$` to absorb it)
    - Multi-statement pattern (not supported — use relational rules)
    - Wrong node granularity (pattern matches expression but code is in a statement context, or vice versa)
@@ -288,8 +326,9 @@ When running on file paths, ast-grep auto-detects the language from file extensi
 ### Before applying rewrites
 
 1. **Preview first.** Run without `-U` to see the diff. Review it.
-2. **Scope narrowly.** Use `--globs` or specific directory paths to limit the blast radius.
-3. **Verify after.** Run the project's build and test suite after applying changes to catch anything ast-grep's structural matching could not anticipate (e.g., semantic changes that happen to share syntax with the pattern).
+2. **Scan the whole repo.** The pattern itself provides selectivity — do not manually restrict to specific directories, as this leads to missed rename sites that only surface as build failures. Use `--globs` only to exclude known false positives (e.g., `--globs '!vendor/*'` or `--globs '!**/generated/**'`).
+3. **Format after.** ast-grep rewrites can collapse multi-line formatting to single lines. Run the project's formatter (prettier, rustfmt, gofmt, etc.) after applying rewrites.
+4. **Verify after.** Run the project's build and test suite after applying changes to catch anything ast-grep's structural matching could not anticipate (e.g., semantic changes that happen to share syntax with the pattern).
 
 ### Choosing inline vs YAML
 
