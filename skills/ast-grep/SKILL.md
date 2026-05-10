@@ -184,7 +184,7 @@ rule:
     stopBy: end
 ```
 
-**`stopBy: end` is critical.** Without it, `inside` only checks one level up in the tree. With `stopBy: end`, it traverses all ancestors up to the file root. This matters because the AST has intermediate nodes you may not expect (e.g., `expression_statement` between a function call and the enclosing function body). Always add `stopBy: end` unless you specifically want single-parent-only matching.
+**`stopBy: end` is critical.** Without it, `inside` only checks the immediate parent node. With `stopBy: end`, it traverses all ancestors up to the file root. This matters because even simple nesting has multiple intermediate AST nodes between a matched node and its logical container (e.g., `call_expression` → `expression_statement` → `statement_block` → `function_declaration`). Without `stopBy: end`, matching `console.log($$$)` inside a `function_declaration` fails even with trivial one-level nesting. Always add `stopBy: end` unless you specifically want immediate-parent-only matching.
 
 Available relational rules:
 
@@ -315,7 +315,7 @@ When a pattern does not match what you expect:
 
 ## Exit Codes
 
-`sg run`: exit `0` means matches were found, exit `1` means no matches. This is inverted from what most tools do. Other exit codes indicate errors (e.g., 3 for missing required `--lang`, 8 for patterns that fail to parse such as multi-statement patterns). Do not treat all non-zero exits as "no matches." Note that some malformed patterns may still exit 0 with a warning about an `ERROR` node — always check stderr output.
+`sg run`: exit `0` means matches were found, exit `1` means no matches — but this is not reliable when the pattern contains an ERROR node, which also exits 0 with zero matches and a warning on stderr. Always check stderr for warnings. Other exit codes indicate errors (e.g., 3 when `--stdin` is used without `--lang`, 2 when `--debug-query` is used without `--lang`, 8 for patterns that fail to parse such as multi-statement patterns). Do not treat all non-zero exits as "no matches."
 
 `sg scan`: exit `0` means no error-severity findings, exit `1` means at least one `severity: error` finding. All other severities (`warning`, `info`, `hint`) exit `0`.
 
@@ -325,12 +325,40 @@ When running on file paths, ast-grep auto-detects the language from file extensi
 
 ## Workflow Guidance
 
+### Before writing any pattern
+
+These steps are mandatory, not advisory. Skipping them is the single most common cause of wasted work with ast-grep.
+
+1. **Check known pitfalls.** Review the "Common causes of non-matches" list in the Debugging section before writing your pattern. The labeled statement trap (`key: value` parsing as a label, not a property) catches people repeatedly even after they know about it.
+2. **Inspect your pattern's parse.** Run `--debug-query=pattern` on every new pattern before using it. If the output shows an unexpected node type (e.g., `labeled_statement` when you expected `pair`), fix the pattern before proceeding.
+3. **Inspect the source code's AST.** Run `--debug-query=ast` on a representative snippet of the code you want to match. Identifiers parse as different node kinds depending on context — `property_identifier`, `shorthand_property_identifier`, `type_identifier`, etc. — and a pattern written for the wrong kind will silently match nothing. Discover the actual node kinds before writing the pattern.
+
 ### Before applying rewrites
 
-1. **Preview first.** Run without `-U` to see the diff. Review it.
-2. **Scan the whole repo.** The pattern itself provides selectivity — do not manually restrict to specific directories, as this leads to missed rename sites that only surface as build failures. Use `--globs` only to exclude known false positives (e.g., `--globs '!vendor/*'` or `--globs '!**/generated/**'`).
-3. **Format after.** ast-grep rewrites can collapse multi-line formatting to single lines. Run the project's formatter (prettier, rustfmt, gofmt, etc.) after applying rewrites.
-4. **Verify after.** Run the project's build and test suite after applying changes to catch anything ast-grep's structural matching could not anticipate (e.g., semantic changes that happen to share syntax with the pattern).
+**Never apply blind.** Do not pass `-U` on the first run. A blind rewrite overwrites file content in place with no recovery path short of `git checkout` — and if the fix template was wrong, the revert may not restore the original code (e.g., a hardcoded replacement loses the distinct values that were at each site). Follow these steps in order:
+
+1. **Preview first.** Run without `-U` to see the diff.
+2. **Check match count.** Pipe through `--json | jq length` or review the diff output. If the count is higher than expected, inspect the extra matches before applying. If it is lower, you are missing sites.
+3. **Scan the whole repo.** The pattern itself provides selectivity — do not manually restrict to specific directories, as this leads to missed rename sites that only surface as build failures. Use `--globs` only to exclude known false positives (e.g., `--globs '!**/vendor/**'` or `--globs '!**/generated/**'`). Always use `**/` in exclusion patterns to match at any depth.
+4. **Apply.** Only after previewing and confirming the match set, run with `-U`.
+
+### After applying rewrites
+
+5. **Format.** ast-grep rewrites can collapse multi-line formatting to single lines. Run the project's formatter (prettier, rustfmt, gofmt, etc.) after applying rewrites.
+6. **Check for stragglers.** Grep for the old name across all file types — including comments, strings, docs, and test fixtures. ast-grep only matches code structure; occurrences in prose, JSDoc, string literals, and non-code files will be missed.
+7. **Run the type checker.** For variable renames, run the type checker before running tests. ast-grep cannot see scope — renaming a variable can collide with an existing name in the same scope, and the type checker will surface this faster and more precisely than the test suite.
+8. **Run the full build.** Run the project's build and test suite to catch anything ast-grep's structural matching could not anticipate.
+
+### Terminology migrations
+
+When a rename is a terminology migration (not just a code rename), the code rewrite is only part of the job. After ast-grep handles the structural code changes, do a deliberate manual pass over:
+
+- Comments and JSDoc that reference the old terminology
+- Documentation files (README, guides, API docs)
+- String literals (error messages, log messages, descriptions)
+- Schema names and persisted keys that should reflect the new terminology
+
+ast-grep handles code; prose requires separate attention. Skipping this pass leaves the codebase in an inconsistent state where code says one thing and documentation says another.
 
 ### Choosing inline vs YAML
 
