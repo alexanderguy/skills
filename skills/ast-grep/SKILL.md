@@ -7,6 +7,8 @@ description: Bulk code refactoring using AST patterns instead of manual read-edi
 
 Use `ast-grep` (CLI: `sg`) for structural code search and rewriting. It matches and transforms code using Abstract Syntax Tree patterns rather than text, so it understands code structure and handles formatting, whitespace, and nesting correctly.
 
+If you can describe the change as "rename X to Y" or "change all A-shaped code to B-shaped code," use ast-grep — even if you already know some of the locations. Knowing where the definitions are does not mean you know where all the access sites are.
+
 Prefer ast-grep over manual read-edit-write cycles when:
 
 - Renaming functions, methods, types, or variables across files
@@ -18,7 +20,7 @@ Prefer ast-grep over manual read-edit-write cycles when:
 
 Do not use ast-grep when:
 
-- The change is to a single location and you already know exactly where it is
+- The change is truly isolated — a single site with no callers, no consumers, no matching pattern elsewhere in the codebase (e.g., fixing a typo in one string literal)
 - The transformation depends on runtime semantics ast-grep cannot see (e.g., type resolution across modules)
 - The target language is not supported
 
