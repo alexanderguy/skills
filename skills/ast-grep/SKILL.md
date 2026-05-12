@@ -91,16 +91,45 @@ The `-U` (`--update-all`) flag applies changes to files without prompting. Witho
 
 ### Common inline recipes
 
-**Rename a function:**
+**Rename a function call site:**
 ```bash
 sg run -p 'oldName($$$ARGS)' -r 'newName($$$ARGS)' -l js -U src/
 ```
+This pattern only matches `identifier` nodes in call-expression position. It will not catch the name where it appears as a type annotation (`type_identifier`), an interface or object field (`property_identifier`), a destructured binding (`shorthand_property_identifier_pattern`), or an object literal shorthand (`shorthand_property_identifier`). For a name that appears in more than one syntactic position, use the multi-kind rename recipe below.
+
+**Rename an identifier across all syntactic positions (TypeScript):**
+
+In TypeScript the same bare name parses as a different AST node kind depending on where it sits — `identifier` in expressions, `type_identifier` in type annotations, `property_identifier` in interface or object fields, `shorthand_property_identifier_pattern` in destructured bindings, and `shorthand_property_identifier` in object literal shorthand. A bare inline rewrite (`sg run -p 'OldName' -r 'NewName'`) only matches `identifier` and silently misses the rest. Use a YAML rule that enumerates the node kinds:
+
+```bash
+sg scan --inline-rules '
+id: rename-identifier
+language: typescript
+rule:
+  any:
+    - kind: identifier
+      regex: "^OldName$"
+    - kind: type_identifier
+      regex: "^OldName$"
+    - kind: property_identifier
+      regex: "^OldName$"
+    - kind: shorthand_property_identifier_pattern
+      regex: "^OldName$"
+    - kind: shorthand_property_identifier
+      regex: "^OldName$"
+fix: NewName
+' -U src/
+```
+
+This is the default approach for renaming a type, class, interface, or any identifier that may surface in more than just call-site position. The inline `sg run -p` form is the shortcut for call-site-only renames.
 
 **Change an import source:**
 ```bash
 sg run -p 'import $$$ITEMS from "old-package"' -r 'import $$$ITEMS from "new-package"' -l ts -U src/
 ```
 Use `$$$ITEMS` (not `$ITEMS`) because `import type` inserts an extra `type` node as a sibling before the import clause. `$ITEMS` expects exactly one node in that position and fails when two are present.
+
+The symmetric export form does not work inline. `sg run -p 'export $$$ITEMS from "old-package"' -r '...'` fails with "Multiple AST nodes are detected" — the re-export does not parse as a single AST node. For re-export source rewrites, use a YAML rule keyed on `kind: export_statement` with a `has` constraint on the source string, or fall back to manual edits when the file count is small.
 
 **Add an argument to a call:**
 ```bash
@@ -346,7 +375,7 @@ These steps are mandatory, not advisory. Skipping them is the single most common
 
 5. **Format.** ast-grep rewrites can collapse multi-line formatting to single lines. Run the project's formatter (prettier, rustfmt, gofmt, etc.) after applying rewrites.
 6. **Check for stragglers.** Grep for the old name across all file types — including comments, strings, docs, and test fixtures. ast-grep only matches code structure; occurrences in prose, JSDoc, string literals, and non-code files will be missed.
-7. **Run the type checker.** For variable renames, run the type checker before running tests. ast-grep cannot see scope — renaming a variable can collide with an existing name in the same scope, and the type checker will surface this faster and more precisely than the test suite.
+7. **Run the type checker.** ast-grep matches on syntax, not semantics — it cannot guarantee that every reference to a name has been caught across every syntactic context, and it cannot see scope. In typed languages, run the type checker before the test suite. It is the safety net that surfaces both kinds of miss: occurrences of the old name that the pattern did not anticipate (e.g., type annotations missed by a call-site-only rename), and scope collisions where the new name shadows an existing binding. Without a type checker, these gaps are silent and only show up at runtime.
 8. **Run the full build.** Run the project's build and test suite to catch anything ast-grep's structural matching could not anticipate.
 
 ### Terminology migrations
@@ -364,7 +393,8 @@ ast-grep handles code; prose requires separate attention. Skipping this pass lea
 
 | Situation | Use |
 |---|---|
-| Simple rename or argument change | `sg run -p ... -r ...` |
+| Call-site-only rename or argument change | `sg run -p ... -r ...` |
+| Renaming an identifier that may appear in type annotations, fields, or destructuring | YAML rule with `any:` over the relevant node kinds (see "Rename an identifier across all syntactic positions" above) |
 | Need to exclude certain matches | YAML rule with `not` or `constraints` |
 | Need positional context (inside a function, after an import) | YAML rule with `inside`/`follows`/`precedes` |
 | Need case conversion or string manipulation in the replacement | YAML rule with `transform` |
