@@ -1,4 +1,5 @@
 ---
+name: critique
 description: Critical code reviewer that tests assumptions and reports quality issues without fixing them
 mode: subagent
 ---

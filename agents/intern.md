@@ -1,4 +1,5 @@
 ---
+name: intern
 description: Handles menial tasks like running builds and debugging basic command failures
 mode: subagent
 ---

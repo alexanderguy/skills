@@ -1,4 +1,5 @@
 ---
+name: greybeard
 description: Seasoned engineer review of product, architecture, and implementation documentation
 mode: subagent
 color: "#6B7280"
