@@ -66,11 +66,9 @@ All subsequent work happens in the worktree directory.
 
 ## Phase 4: Implement
 
-Load the `implement` skill and follow its workflow for each logical unit of work.
+Carry out the plan from Phase 2 in the worktree using whichever implementation approach fits the work and your role.
 
-The implementation plan from Phase 2 defines what to build. Break it into commit-sized units and work through each one using the implement skill's per-commit discipline: Greybeard review, implement and test, build gate, commit, Critique loop.
-
-Keep commits focused. Each commit should represent one logical change that can be reviewed and understood independently.
+Break the work into commit-sized units. Each commit should represent one logical change that can be reviewed and understood independently.
 
 ## Phase 5: Push and PR
 
