@@ -10,7 +10,7 @@ Use this skill to create properly structured Linear artifacts. Based on the scop
 
 ## Prerequisites
 
-Before doing anything else, verify the `linear` subagent is available by checking if it appears in your available agent types. If it is not available, inform the user:
+Before doing anything else, verify the Linear MCP tools are available by checking for `mcp__linear__*` tools in your toolset. If they are not available, inform the user:
 
 > The Linear integration is not available. Please ensure the Linear MCP server is configured and try again.
 
@@ -207,41 +207,23 @@ Allow the user to:
 
 ### Workspace Discovery
 
-Before creating artifacts, query the Linear workspace:
+Before creating artifacts, query the Linear workspace using the appropriate `mcp__linear__*` tools:
 
-- **Teams**: Always query available teams and ask the user which team should own issues or projects
-- **Projects**: Query existing projects if the user mentions adding to an existing project
-- **Initiatives**: Query existing initiatives if linking to one
-
-Example queries:
-
-```
-Task(description="Query Linear teams", prompt="List available teams in the workspace", subagent_type="linear")
-Task(description="Query Linear projects", prompt="List active projects in team <team-name>", subagent_type="linear")
-Task(description="Query Linear initiatives", prompt="List initiatives", subagent_type="linear")
-```
+- **Teams**: Always query available teams (`mcp__linear__list_teams`) and ask the user which team should own issues or projects
+- **Projects**: Query existing projects (`mcp__linear__list_projects`) if the user mentions adding to an existing project
+- **Initiatives**: Query existing initiatives (`mcp__linear__list_initiatives`) if linking to one
 
 Present options to the user when multiple choices exist.
 
 ### Creating Artifacts
 
-After user approval, create artifacts using the `linear` subagent:
+After user approval, create artifacts using the appropriate `mcp__linear__*` tools:
 
-1. **Create container first** (initiative or project)
-2. **Create issues** in dependency order
-3. **Set blocking relationships** between issues
-4. **Add issues to project** (if applicable)
-5. **Add projects to initiative** (if applicable)
-
-Example subagent calls:
-
-```
-Task(description="Create Linear project", prompt="Create a project titled 'User authentication with SSO support' with target date <target-date>, description: '<description>'", subagent_type="linear")
-
-Task(description="Create Linear issue", prompt="Create an issue titled 'Set up authentication database schema' with description: '<desc>' and acceptance criteria: '<ac>', add to project <project-id>", subagent_type="linear")
-
-Task(description="Set issue dependency", prompt="Set issue <issue-B-id> as blocked by <issue-A-id>", subagent_type="linear")
-```
+1. **Create container first** (initiative via `mcp__linear__save_initiative`, project via `mcp__linear__save_project`)
+2. **Create issues** in dependency order (`mcp__linear__save_issue`)
+3. **Set blocking relationships** between issues (via `mcp__linear__save_issue` parameters)
+4. **Add issues to project** (via `mcp__linear__save_issue` parameters)
+5. **Add projects to initiative** (via `mcp__linear__save_project` parameters)
 
 Report created artifacts to the user with their URLs.
 
