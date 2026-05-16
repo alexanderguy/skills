@@ -11,11 +11,7 @@ Use this skill when implementing features or fixes tracked in Linear.
 
 ## Phase 1: Understand the Issue
 
-Fetch the Linear issue using the `linear` subagent:
-
-```
-Task(subagent_type="linear", prompt="Fetch issue <ISSUE-ID> including title, description, status, and acceptance criteria")
-```
+Fetch the Linear issue using `mcp__linear__get_issue`. The returned issue includes title, description, status, branch name, and other metadata you will need later.
 
 Ask the user clarifying questions if the scope is unclear before proceeding.
 
@@ -33,24 +29,13 @@ Ask the user clarifying questions if the scope is unclear before proceeding.
 
 3. Present the plan to the user and ask if they would like any changes before proceeding. Do not start implementation until the user approves the plan.
 
-4. Optionally attach the plan to the Linear issue:
+4. Optionally attach the plan to the Linear issue as a comment using `mcp__linear__save_comment`.
 
-   ```
-   Task(subagent_type="linear", prompt="Attach this implementation plan as a document to <ISSUE-ID>: <plan>")
-   ```
-
-5. Mark the issue as "In Progress":
-   ```
-   Task(subagent_type="linear", prompt="Update issue <ISSUE-ID> status to In Progress")
-   ```
+5. Mark the issue as "In Progress" using `mcp__linear__save_issue` with the appropriate state.
 
 ## Phase 3: Set Up Worktree
 
-Get the branch name from Linear:
-
-```
-Task(subagent_type="linear", prompt="Get the git branch name for issue <ISSUE-ID>")
-```
+Read the branch name from the `branchName` field on the issue fetched in Phase 1 (call `mcp__linear__get_issue` again if needed).
 
 Determine the repository's default branch:
 
@@ -147,16 +132,14 @@ If the worktree directory was already manually deleted, prune stale worktree ref
 git worktree prune
 ```
 
-## Linear Subagent Patterns
+## Linear MCP Tool Reference
 
 Common operations:
 
-| Action          | Prompt                                                          |
-| --------------- | --------------------------------------------------------------- |
-| Fetch issue     | `Fetch issue <ISSUE-ID> with full details`                      |
-| Get branch name | `Get the git branch name for issue <ISSUE-ID>`                  |
-| Update status   | `Update issue <ISSUE-ID> status to In Progress`                 |
-| Attach document | `Attach this as a document titled "X" to <ISSUE-ID>: <content>` |
-| Add comment     | `Add a comment to <ISSUE-ID>: <comment>`                        |
-
-Always use `subagent_type="linear"` when calling the Task tool for Linear operations.
+| Action          | Tool                                                       |
+| --------------- | ---------------------------------------------------------- |
+| Fetch issue     | `mcp__linear__get_issue`                                   |
+| Get branch name | `mcp__linear__get_issue` (read `branchName` from result)   |
+| Update status   | `mcp__linear__save_issue` (set the state)                  |
+| Add comment     | `mcp__linear__save_comment`                                |
+| List teams      | `mcp__linear__list_teams`                                  |
