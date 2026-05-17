@@ -91,6 +91,28 @@ Required information:
 
 Create drafts following these conventions:
 
+### Do Not Reference Local Files
+
+Linear artifacts are read by people who do not share your working directory. Do not include local file paths, line numbers, working-tree-relative paths, or instructions like "see `src/foo.ts`" in titles, descriptions, or comments. Those references rot, are not clickable, and assume context the reader does not have.
+
+Instead:
+
+- Describe the behavior, module, or concept in plain language ("the authentication middleware", "the request retry logic")
+- Link to permanent URLs (GitHub permalinks at a specific commit, published documentation) when a precise pointer is required
+- Quote the relevant code inline if a short excerpt is needed for context
+
+This applies equally when drafting from planning documents — extract the meaning, do not transcribe paths.
+
+### Specs Belong as Attachments
+
+If a spec, design document, or planning artifact needs to be preserved so an implementer can refer to it, attach it to the Linear artifact rather than referencing the local file path:
+
+- Specs that describe an entire project's scope or design attach to the **project**
+- Specs that describe a single unit of work attach to the **issue** for that work
+
+Use `mcp__linear__prepare_attachment_upload` followed by `mcp__linear__create_attachment_from_upload` (or `mcp__linear__create_attachment` for URL-based references) to upload the document. Once attached, any reference inside the issue or project description should point to the attached document — never to the original local file path.
+
+
 ### Issue Format
 
 **Title**: Clear and actionable. Verb phrases are preferred, but sentences or noun phrases are acceptable when they provide clarity.
