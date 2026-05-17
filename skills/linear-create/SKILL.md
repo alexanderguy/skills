@@ -1,12 +1,12 @@
 ---
 name: linear-create
-description: Create well-structured Linear issues, projects, or initiatives
+description: Create well-structured Linear issues, projects, project updates, or initiatives
 argument-hint: "[description] [--from-doc]"
 ---
 
 # Linear Create
 
-Use this skill to create properly structured Linear artifacts. Based on the scope of work, this skill will create the appropriate combination of issues, projects, and/or initiatives.
+Use this skill to create properly structured Linear artifacts. Based on the scope of work, this skill will create the appropriate combination of issues, projects, project updates, and/or initiatives.
 
 ## Prerequisites
 
@@ -41,9 +41,11 @@ Use extracted information to:
 
 Determine what the user wants to create:
 
-1. **Explicit request**: User specifies artifact type ("create an issue for...", "create a project for...")
+1. **Explicit request**: User specifies artifact type ("create an issue for...", "create a project for...", "post a project update for...")
 2. **From document**: User provides `--from-doc` to extract work items from planning documents
 3. **Freeform**: User describes work without specifying type
+
+Project updates are a distinct artifact: they communicate status on an existing project to a non-technical audience and are never inferred from scope. The user must explicitly ask for one.
 
 For freeform input, estimate the scope:
 
@@ -86,6 +88,20 @@ Required information:
 - What strategic objective does this serve?
 - Who is the executive owner?
 - What projects should be included?
+
+### For Project Updates
+
+Required information:
+- Which project is this update for? (use `mcp__linear__list_projects` and confirm with the user if the match is not exact)
+- What is the project's current health? (on track, at risk, off track, completed, paused)
+- What has the project unlocked or enabled since the last update? Describe in terms of capabilities, outcomes, or things that are now possible — not lists of completed tickets.
+- What's coming next, framed by user-visible impact?
+- Are there any risks or blockers the audience needs to know about? Describe them by impact, not implementation.
+
+Optional:
+- Should the update be tied to a specific milestone?
+
+Before drafting, retrieve the most recent prior update with `mcp__linear__get_status_updates` so the new one continues the narrative rather than restating prior progress.
 
 ## Phase 4: Draft Content
 
@@ -195,6 +211,44 @@ Experiment
 
 **Description**: Include as much information as needed to convey the business goal and how success will be measured. If unsure what to include, prompt the user for guidance.
 
+### Project Update Format
+
+**Audience**: Project updates are read by non-technical stakeholders — founders, GMs, customer-facing teammates, leadership, and sometimes customers. Write for someone who cares about *what the project makes possible*, not *what work was done*.
+
+**Style rules:**
+
+- Lead with what is now possible, available, or unblocked because of recent progress. The reader wants to know what changed for them, not what changed in the codebase.
+- Do not enumerate completed issues, PR titles, commits, or internal implementation details. "Shipped INF-204, INF-205, INF-211" is the wrong shape; "Customers can now invite teammates and assign roles without contacting support" is the right shape.
+- Avoid jargon, acronyms, internal codenames, and tool-of-the-week terminology unless they are already part of the audience's vocabulary. When in doubt, spell it out in plain language.
+- Frame risks and blockers by their impact on the outcome ("the launch date may slip by two weeks because we are still waiting on the vendor's API access"), not by their technical cause.
+- Keep it short. A project update that takes more than a minute to read will not be read.
+
+**Structure**:
+
+```
+## Where we are
+
+<One or two sentences naming the current state of the project in plain terms.>
+
+## What this unlocks
+
+<What is now possible, available, or in motion because of recent progress. Outcome-oriented, not task-oriented.>
+
+## What's next
+
+<The next user-visible milestone, framed by impact rather than by the tasks required to get there.>
+
+## Risks
+
+<Optional. Only include if there is something the audience needs to know. Describe the impact on the outcome, not the technical cause.>
+```
+
+If a section has nothing meaningful to say in this update, omit it rather than padding it.
+
+**Health**: Set the project health to match reality (`onTrack`, `atRisk`, `offTrack`, `complete`, or `paused`). If you would not show the chosen health to the project's sponsor with a straight face, it is the wrong health.
+
+**Self-check before posting**: Re-read the draft and ask, "would a non-engineer who has never opened the codebase come away knowing what changed for them?" If the answer is no, rewrite it.
+
 ## Phase 5: Review and Adjust
 
 Present the complete draft to the user:
@@ -246,6 +300,7 @@ After user approval, create artifacts using the appropriate `mcp__linear__*` too
 3. **Set blocking relationships** between issues (via `mcp__linear__save_issue` parameters)
 4. **Add issues to project** (via `mcp__linear__save_issue` parameters)
 5. **Add projects to initiative** (via `mcp__linear__save_project` parameters)
+6. **Post project updates** (via `mcp__linear__save_status_update`, targeting the project resolved during the interview)
 
 Report created artifacts to the user with their URLs.
 
