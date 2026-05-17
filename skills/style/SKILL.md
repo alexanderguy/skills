@@ -37,7 +37,7 @@ Decorative comment blocks (ASCII art dividers, section headers) add visual noise
 
 - Complex algorithms that aren't immediately obvious
 - Non-obvious workarounds or edge cases
-- TODO/FIXME/XXX markers for future work
+- TODO/FIXME/XXX markers for work that is genuinely blocked (see below)
 - Business logic that requires explanation
 
 ```
@@ -45,6 +45,17 @@ Decorative comment blocks (ASCII art dividers, section headers) add visual noise
 // TODO - Switch to newMethod when minimum version is bumped
 result = await legacyMethod()
 ```
+
+**TODO/FIXME/XXX markers are not a deferral mechanism.** They are reserved for work that is *genuinely blocked* by something outside your control — waiting on an upstream library fix, an unreleased API version, missing access or credentials, a dependency in another team's queue. The marker must name the blocker, so a reader knows what would unblock it.
+
+Do not use these markers for:
+
+- Work you could do now but would prefer not to ("TODO: clean up this function")
+- Work you ran out of patience for ("FIXME: this should probably handle the error case")
+- Work you're hoping someone else will pick up ("TODO: add tests")
+- Decisions you didn't want to make ("TODO: figure out the right default")
+
+If you could do it now, do it now. A TODO is a promise to the reader that the work cannot be done yet; abusing the marker for work you simply chose not to do is dishonest and accumulates as dead weight in the codebase.
 
 ## Git Workflow
 
@@ -121,7 +132,31 @@ Only touch code that is directly related to the task at hand. Do not make drive-
 - Adjusting whitespace, import order, or style in files you're passing through
 - "While I'm here" refactors that aren't part of the assignment
 
-These changes pollute diffs, make review harder, and risk introducing unintended breakage. If you notice something that genuinely needs fixing, raise it as a separate piece of work rather than bundling it in.
+These changes pollute diffs, make review harder, and risk introducing unintended breakage.
+
+### Scope is not "the narrowest possible reading of the task"
+
+Scope discipline exists to prevent unrelated drive-bys, not to license deferral of work that is genuinely part of the task you accepted. If you read the task narrowly enough, almost anything can be called "out of scope" — that is a failure mode, not a virtue.
+
+A change is **in scope** if it is:
+
+- Part of what the task or issue explicitly asked for
+- Required to make the requested change correct, safe, or coherent
+- Necessary follow-through to the change you just made (updating callers of a renamed function, adjusting tests that now fail, updating docs that now lie)
+
+A change is **out of scope** only if it has no causal relationship to the work you are doing — a tangential improvement you noticed while passing through.
+
+### Deferral has a cost. Do the work now when you can.
+
+When something is in scope but inconvenient — a refactor your change makes obvious, a test you should add, a docstring that's now wrong, a helper that should be extracted — the default is to **do it now, in a properly-scoped commit on this branch**. Not a TODO. Not a follow-up ticket. Not a "we should clean this up someday." Those mechanisms exist for genuinely blocked work; using them as a release valve for work you'd rather not do creates debt the team has to carry.
+
+If you genuinely cannot do it on this branch, "raise it as a separate piece of work" means one of:
+
+1. A separate commit on the same branch, with a clear message explaining why it stands alone.
+2. A follow-up PR that you commit to opening in this same working session, not "later".
+3. A tracked issue with concrete acceptance criteria and a named owner — not a vague reminder.
+
+If none of those are happening, you are not deferring the work, you are dropping it. Don't pretend otherwise.
 
 ## Code Reuse and Refactoring
 
