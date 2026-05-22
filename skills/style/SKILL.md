@@ -97,6 +97,17 @@ Update code (too vague)
 Fix bug in server.ts (includes filename)
 ```
 
+**Self-contained:**
+
+A commit message must stand alone. Do not reference:
+
+- File paths or filenames — the diff already lists what changed
+- External tracking systems (Linear, Jira, GitHub issues) — they may move, be renamed, or be inaccessible to future readers; the commit must explain *itself*, not point to an explanation elsewhere
+- PR review comments, prior conversations, or other ephemeral discussions
+- The commit's position in a branch or series ("as discussed in the previous commit")
+
+Someone reading `git log` years from now, with only the repo in hand, should understand the change without leaving the message.
+
 ## Naming
 
 ### Acronyms

@@ -151,6 +151,20 @@ as you would speak to a colleague:
 - Do not soften feedback to the point of obscuring it. The author should
   understand whether something needs to change or is merely a thought.
 
+## Describe the Branch As It Stands
+
+Review comments and PR descriptions must describe the branch's *current* diff against the base, not the journey that produced it. The merged result is what ships; intermediate states, earlier review rounds, and pre-iteration code are not part of the artifact.
+
+Re-derive the description from `git diff <base>...HEAD` every time. Do not trust the existing PR description — it may have been written before the branch was iterated on, and reviewers reading it now should see what is true now.
+
+Bad: "I refactored the retry logic to use exponential backoff and removed the old fixed-delay path."
+Good: "The HTTP client retries transient failures with exponential backoff."
+
+Bad (review comment): "This used to call `foo()` but now calls `bar()` — did you mean to..."
+Good (review comment): "`bar()` is being called here without checking its return value."
+
+Past-tense framing rots: as the branch evolves through review, descriptions of "what was changed" stop matching the diff. Present-tense framing of "what the code now does" stays correct as long as the diff is correct.
+
 ## Commit-Message Coherence
 
 Each commit's message is a claim about what the commit contains. Verify that
