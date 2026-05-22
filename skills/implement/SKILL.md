@@ -119,7 +119,7 @@ Ask Critique to review the committed change.
 2. Read its findings
 3. For each issue marked VERIFIED or HIGH confidence: fix it
 4. Re-run the build gate (Step 3) to verify fixes
-5. Amend the commit with the fixes. If a fix logically belongs on an earlier unpushed commit rather than HEAD, use a fixup commit per the `style` skill's guidance.
+5. Land the fixes on the right commit. If the target is HEAD, `git commit --amend`. Otherwise load the `git-rebase` skill and follow its guidance to pick between Pattern 4 (edit-in-place) and Pattern 5 (fixup + autosquash). Re-run the build gate after the rebase completes.
 6. Ask Critique to review `git show HEAD` again. Re-include the original intent from Step 1 and tell it what you fixed since the last pass so it can focus on verifying the fixes and checking for new issues rather than re-reviewing the entire change from scratch.
 7. Repeat until Critique comes back clean or all remaining findings are acknowledged and intentional
 
@@ -138,7 +138,7 @@ Mark the current task `completed` with `TaskUpdate`. Move to the next unit of wo
 
 **Keep commits focused.** If Critique finds something wrong outside the scope of the current commit, note it for a later commit rather than expanding scope mid-loop.
 
-**Build must pass before every commit and amend.** Never commit code that doesn't compile or pass tests. Fix build failures first, then commit or amend.
+**Build must pass before every commit, amend, and rebase stop.** Never commit code that doesn't compile or pass tests. Fix build failures first, then commit, amend, or continue the rebase.
 
 **Greybeard is for approach, Critique is for execution.** Greybeard reviews your plan before you write code. Critique reviews your code after you write it. Don't conflate the two.
 
