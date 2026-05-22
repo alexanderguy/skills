@@ -57,6 +57,9 @@ made coherent before the branch is pushed for review:
 
 Do **not** reach for it when:
 
+- The commit you want to fix is HEAD itself. Use `git commit --amend`
+  (with `-F /path/to/message.txt` for a pre-written message, `--no-edit`
+  to keep the existing one). No rebase needed.
 - The branch is already pushed and other people are basing work on it.
 - The history is already coherent and you are only chasing aesthetic
   perfection. Style and philosophy say "commits should read like a story" —
@@ -353,10 +356,63 @@ dispatcher can't tell them apart from `head -1` alone. Either:
   commit so far). `fixup` does not invoke the editor — the message is
   taken from the predecessor unchanged — so no dispatcher fires.
 
-### Pattern 4: Fixup + autosquash
+### Pattern 4: Edit a commit in place
 
-For "this small change should be folded into commit X," the
-`fixup!`-subject + `--autosquash` flow is by far the cleanest path:
+This is the workhorse for folding a change into an earlier commit. If
+the target is HEAD, don't rebase at all — `git commit --amend` (with
+`-F` for a pre-written message, `--no-edit` to keep the existing one).
+The rest of this pattern is for editing an earlier commit.
+
+Mark the target `edit`, modify the working tree at the stop, and
+`git commit --amend`:
+
+```bash
+# editor script: sed 's/^pick TARGET_SHA/edit TARGET_SHA/'
+GIT_SEQUENCE_EDITOR=/tmp/rebase-editor.sh git rebase -i origin/main
+
+# At the stop:
+# ... edit files in working tree ...
+git add <files>
+git commit --amend --no-edit
+git rebase --continue
+```
+
+If a later commit's diff conflicts with the amendment, git stops again at
+the conflicted commit. Resolve and continue. This is the price of editing
+mid-history: every commit downstream of the edit gets replayed and may
+conflict.
+
+**Why prefer this over the `fixup! + --autosquash` flow (Pattern 5)?**
+With `edit`, you author the fix against the *target commit's actual
+tree* — what was there at that point in history. With `fixup!`, you
+author the change at HEAD's tree (after all intervening commits), and
+`--autosquash` later tries to apply that diff against the much-earlier
+target tree. When the fix touches anything that intervening commits
+also modified, that backward apply conflicts — and you end up
+resolving a conflict between a hunk written against late state and a
+tree from early state, which is easy to get wrong (dragging in
+late-state assumptions). Reach for `edit` whenever the fix's content
+might depend on intervening commits, or whenever the branch has
+non-trivial churn between the target and HEAD. Reach for `fixup!`
+(Pattern 5) for small, isolated changes you're confident don't overlap
+intervening work.
+
+Two smaller wins follow from the same property: at the `edit` stop,
+the working tree is exactly the target commit's state. First, no
+accidentally-bundled drive-by changes from HEAD can sneak into your
+amend. Second, you can install dependencies, lint, build, and run
+tests against the *historical* state — verifying the commit actually
+works in the world it lived in. With `fixup!`, your validation only
+ever sees HEAD's tree; the squashed commit is never tested against
+the rewound state where it lands. (Pattern 7's `--exec` mechanizes
+this validation across every commit in the rebase.)
+
+### Pattern 5: Fixup + autosquash
+
+For small, isolated changes that don't depend on context introduced
+after the target commit, the `fixup!`-subject + `--autosquash` flow is
+the cleanest path. When the fix overlaps intervening work, prefer
+Pattern 4 (Edit in place) instead.
 
 ```bash
 # Make the change at HEAD, then:
@@ -407,10 +463,11 @@ documented no-op env var) rather than reaching for blanket
 `--no-verify`, which discards every other pre-commit safety check on
 every replayed commit. Restore the hook after the rebase.
 
-### Pattern 5: Split a commit into pieces
+### Pattern 6: Split a commit into pieces
 
-Use `edit` to stop the rebase at the commit you want to split, then
-reconstruct it as multiple commits before continuing.
+Builds on the `edit` mechanism from Pattern 4: stop the rebase at the
+commit you want to split, then reconstruct it as multiple commits before
+continuing.
 
 ```bash
 cat > /tmp/rebase-editor.sh <<'EOF'
@@ -466,28 +523,6 @@ git rebase --continue
 # Then:
 GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/main
 ```
-
-### Pattern 6: Edit a commit in place
-
-When you want to amend an earlier commit (add a fix, tweak the diff)
-without splitting or moving it, mark it `edit`, modify the working tree at
-the stop, and `git commit --amend`:
-
-```bash
-# editor script: sed 's/^pick TARGET_SHA/edit TARGET_SHA/'
-GIT_SEQUENCE_EDITOR=/tmp/rebase-editor.sh git rebase -i origin/main
-
-# At the stop:
-# ... edit files in working tree ...
-git add <files>
-git commit --amend --no-edit
-git rebase --continue
-```
-
-If a later commit's diff conflicts with the amendment, git stops again at
-the conflicted commit. Resolve and continue. This is the price of editing
-mid-history: every commit downstream of the edit gets replayed and may
-conflict.
 
 ### Pattern 7: Validate every commit during the rebase
 
