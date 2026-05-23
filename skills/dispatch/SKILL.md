@@ -233,10 +233,14 @@ Gate critique verdicts are written at the run level, not the task level:
 ```
 dispatch/<run-name>/
   dispatch.yaml
+  baseline-build.log                # full build at dispatch start (compared in Phase 5)
   level1-gate-critique.yaml         # gate verdict for level 1 planned tasks
   level2-gate-critique.yaml         # gate verdict for level 2 planned tasks
   level1-amend-round1-gate-critique.yaml  # gate for first amendment round at level 1
   level1-amend-round2-gate-critique.yaml  # gate for second round (if round 1 amendments still have issues)
+  level1-amend-round1-percommit-<sha>.log  # per-commit fast-gate output (Step 3b validation)
+  final-build.log                   # Phase 5 final build output
+  failure-attribution.md            # Phase 5 mapping of failures to commits
   1a-extract_auth_module/
     plan.md
     output.yaml
@@ -264,6 +268,22 @@ verify:
     - name: integration-tests
       command: "bun test:integration"
 
+validation:                  # fast gate used by Step 3b per-commit validation and Phase 5 rebase --exec
+  fast-gate: "bun run typecheck && bun run lint"
+  # Contract: the fast-gate command MUST fail when a commit references a
+  # symbol, import, or type defined only in a later commit. That is the
+  # bug Phase 5 exists to catch; anything that doesn't catch it is not a
+  # gate. The command MUST be a strict subset of the `verify` pipeline
+  # above. Stubs (`true`, `echo ok`, no-op wrappers) are forbidden —
+  # they silently disable the safety net.
+  #
+  # If the project genuinely has no faster subset than the full gate,
+  # declare it explicitly:
+  #   no-fast-gate: true
+  #   reason: "Project has no separate type-check step; full gate is the minimum."
+  # The full `verify` pipeline is then used at every per-commit
+  # validation point, and the cost is accepted honestly.
+
 critique:
   enabled: true              # global default; tasks can override
   agent: critique            # defaults to critique; must be an agent that can write gate-critique.yaml
@@ -274,6 +294,14 @@ commits:
   message-source: objective  # objective (from plan.md) | notes (from output.yaml)
 
 level-boundaries: {}           # populated by Step 3a+; maps level number to the commit SHA immediately before that level's first commit (e.g., {1: "abc123", 2: "def456"}). Used by rebuild logic to know where to `git reset` without walking git log.
+
+backup-branch: ""              # populated at Phase 4 entry: backup-<branch>-pre-dispatch. Primary recovery path for Phase 5 mid-rebase crashes. Deleted on successful Phase 7 completion.
+
+fix-loop:                      # populated by Phase 5 fix loop; cleared on successful exit
+  in-progress: false           # true while a Phase 5 rebase-edit iteration is mid-flight
+  iteration: 0                 # rounds since this Phase 5 invocation began
+  rebase-base: ""              # parent SHA of the earliest affected commit; the rebase replays everything after this
+  affected-commits: []         # original SHAs of commits being amended this iteration, topologically ordered
 
 results:                       # populated by Phase 6; empty until then
   commits: []                  # list of {sha, message, files, tasks} objects
@@ -738,6 +766,17 @@ If the manifest contains zero tasks, the run transitions directly to `completed`
 - The agent type assigned to each task is appropriate -- `explore` agents cannot write files, so implementation tasks must not use them
 - The scope of each task is reasonable for a single subagent
 
+### Validation block
+
+The `validation.fast-gate` (or `validation.no-fast-gate: true` + `validation.reason`) must be declared. Validation:
+
+- Exactly one of `fast-gate` or `no-fast-gate: true` is set.
+- If `fast-gate` is set, the command must not be a stub. Reject as blocking: `true`, `:`, `echo` with no side effect, anything wrapping these. The check is best-effort string match — a contrived bypass is the caller's problem, but the obvious cases must fail validation.
+- If `no-fast-gate: true` is set, `reason` must be a non-empty string. This forces the caller to justify accepting the per-commit cost of the full gate.
+- The `fast-gate` command (when set) must reference commands that exist in `verify` or in the project's documented build scripts. The fast gate is a subset of the full gate, not an unrelated command.
+
+This block gates Phase 5: if validation is missing or malformed when Phase 5 would fire, the run halts with a clear error. Do not silently substitute a default.
+
 ### Validation outcome
 
 | Outcome | Action |
@@ -865,6 +904,16 @@ Update `dispatch.yaml` status to `in-progress` when entering this phase for the 
 
 Before dispatching any tasks, verify the git working tree is clean (no uncommitted changes outside the `dispatch/` directory). If there are uncommitted changes, warn the user and ask how to proceed -- Step 3a+ commits could otherwise include unrelated modifications.
 
+**Create the pre-dispatch backup branch.** Before any commits or history surgery:
+
+1. `current_branch=$(git rev-parse --abbrev-ref HEAD)`
+2. `git branch backup-${current_branch}-pre-dispatch`
+3. Write the branch name to `dispatch.yaml` under `backup-branch`.
+
+This is the primary recovery path if Phase 5's rebase-edit machinery becomes wedged. Reflog entries expire (default 90 days reachable, 30 unreachable); a branch ref does not. The backup is deleted in Phase 7 only after the run completes successfully.
+
+**On resume:** if `backup-branch` is already populated in `dispatch.yaml`, do NOT recreate it — recreating against current HEAD would overwrite the original pre-dispatch snapshot with partially-rewritten history. Verify the existing backup branch still exists in `git branch --list`; if it has been deleted externally, abort the resume and report the issue.
+
 ### Step 1: Resolve ready set
 
 Read `dispatch.yaml`. Find all tasks where:
@@ -985,7 +1034,9 @@ Once all tasks in a level have been collected (Step 3a complete), the orchestrat
 
 **Explore tasks and other zero-file commit units:** When a commit unit would contain zero files (e.g., explore tasks with empty `files-modified`), skip the commit but still update each task's status to `committed` with an empty `commit-sha`. This ensures explore tasks enter the critique gate input set in Step 3b.
 
-**Shared file attribution:** When multiple tasks at the same level list the same file in `files-modified`, the file is attributed to the last task in topological order. Earlier tasks' commits skip that file. If a commit unit would contain zero files after attribution, skip it entirely. This same rule applies during rebuilds (amendment loop and Phase 5 fix loop) — attribution is always re-computed from scratch using the current `files-modified` lists and the topological rule. If a fix agent added a file to task A's `files-modified` that is also listed in task B's `files-modified` (where B is later in topological order), the file goes to B's commit. To avoid this, the fix agent should remove the file from B's `files-modified` if B did not meaningfully change it, or the orchestrator should flag the conflict for manual resolution.
+**Shared file attribution:** When multiple tasks at the same level list the same file in `files-modified`, the file is attributed to the last task in topological order. Earlier tasks' commits skip that file. If a commit unit would contain zero files after attribution, skip it entirely. This same rule applies during the Step 3b amendment loop's reset-and-rebuild — attribution is re-computed from scratch using the current `files-modified` lists and the topological rule. If a fix agent added a file to task A's `files-modified` that is also listed in task B's `files-modified` (where B is later in topological order), the file goes to B's commit.
+
+The Phase 5 rebase-edit fix loop does NOT use `files-modified` attribution for the amend itself — it amends each commit's tree in place at the rebase `edit` stop, so the file set is whatever the fix agent actually staged. Fix agents in Phase 5 should still keep `files-modified` accurate in `output.yaml` for postmortem and downstream tooling, but the file is informational there rather than load-bearing.
 
 After all commit units are created, proceed to Step 3b.
 
@@ -1040,7 +1091,13 @@ When critique finds blocking issues in committed tasks, the orchestrator fixes a
 
 Amendments are processed per commit unit (see Step 3a+). Tasks that share a `commit-group` share a commit — their issues are fixed together and the shared commit is amended once. Tasks with individual commits are amended independently.
 
-**Important:** `git commit --amend` only modifies HEAD. A level may have multiple commit units (A, B, C), and critique may find issues in any of them. You cannot amend commit A if B and C sit on top of it. The amendment loop therefore rebuilds the level's commits after fixes are applied.
+**Why reset-and-rebuild here, not rebase-edit?** The `git-rebase` skill's Pattern 4 (edit-in-place) can amend non-HEAD commits via `git rebase -i` with `edit` actions, and Phase 5 does exactly that. Step 3b deliberately uses reset-and-rebuild instead for three reasons:
+
+1. **No downstream commits exist at this point.** Step 3b runs at end-of-level. The level's commits are the only ones the rebuild needs to recreate; there are no later commits whose replay could conflict.
+2. **Commit units within a level are independent.** They were planned as parallel work — no ordering dependency between them. The churn-between-target-and-HEAD failure mode that motivates Pattern 4 does not exist within a single level.
+3. **Parallel fix agents share the working tree.** Reset-and-rebuild lets multiple fix agents accumulate changes in one working tree before the orchestrator does the commit surgery; Pattern 4's per-commit stop-and-fix would serialize fix agents across commit units.
+
+Per-commit validation (added below, step 3) catches the one residual risk: a fix agent that crosses commit-unit boundaries and references content from a peer unit. Phase 5 is the loop where rebase-edit is needed; this one is not.
 
 **Process:**
 
@@ -1062,19 +1119,25 @@ Amendments are processed per commit unit (see Step 3a+). Tasks that share a `com
    d. Update `commit-sha` for all tasks in the level to their new SHAs.
    e. Since downstream levels have not started yet, no later commits depend on the old SHAs.
 
-3. **Re-run critique** on the rebuilt commits:
+3. **Validate per rebuilt commit:** Run the fast gate at each newly created commit in topological order. This catches the failure mode where a fix agent referenced content from a peer commit unit at end-of-level state — the recreated commit then no longer has access to that content.
+   a. Resolve the fast gate command: `validation.fast-gate` from `dispatch.yaml`, or the full `verify` pipeline if `validation.no-fast-gate: true`. If neither is set, fail the run with a clear message — do not silently skip per-commit validation.
+   b. For each new SHA in topological order: `git checkout <sha>` (detached), run the fast gate, capture output to `dispatch/<run-name>/level<N>-amend-round<R>-percommit-<sha>.log`.
+   c. On failure: a rebuilt commit doesn't build in isolation. Re-enter the fix phase (step 1) with the attributed commit unit and the captured failure log. Treat this as another amendment round — increment the round counter.
+   d. On success across all rebuilt commits: `git checkout <branch-name>` to re-attach HEAD to the branch at the level's final commit, then proceed to step 4.
+
+4. **Re-run critique** on the rebuilt commits:
    - Spawn critique with the new diffs (`git show <new-sha>` for each commit unit)
    - Include the original intent from `plan.md` and what was fixed since last pass
    - Critique evaluates ALL commit units in the level (not just the ones that had issues), since commits were rebuilt
    - Critique writes a new gate file: `level<N>-amend-round<R>-gate-critique.yaml`
    - Note: re-critiquing previously-approved tasks may surface new issues due to non-determinism in critique evaluation. This is expected — escalation (below) handles the case where critique flip-flops across rounds.
 
-4. **Repeat** until critique passes or escalation triggers:
+5. **Repeat** until critique passes or escalation triggers:
    - Round 1-2: Fix silently
    - Round 3: Notify user that a task is proving difficult
    - Round 4+: Ask user for guidance (proceed, consult greybeard, abort)
 
-5. When critique passes: mark all non-failed tasks in the level `completed`
+6. When critique passes: mark all non-failed tasks in the level `completed`
 
 **New test files from critique:** If `gate-critique.yaml` contains `new-tests` entries for a task, add those files to the task's `files-modified` in `output.yaml`. They will be picked up during the level rebuild (step 2b) along with other fix changes.
 
@@ -1289,7 +1352,7 @@ The amendment loop in Step 3b tracks rounds per task. Escalation thresholds:
 
 ### Verification Fix Escalation
 
-The orchestrator tracks fix rounds for Phase 5 verification failures. One round = one complete pass through the fix loop (steps 1 through 5 in "Attribution and Fix Loop", with step 6 being the loop control), regardless of how many levels were rebuilt or how many internal critique re-runs occurred within that pass.
+The orchestrator tracks fix rounds for Phase 5 verification failures. One round = one complete pass through the fix loop (steps 1 through 7 in "Attribution and Fix Loop", with step 8 being the loop control), regardless of how many commits were amended or how many internal critique re-runs occurred within that pass. `fix-loop.iteration` in `dispatch.yaml` reflects the current round.
 
 - Round 1-2: Fix silently
 - Round 3: Notify user that verification is proving difficult, explain what is failing
@@ -1346,63 +1409,95 @@ Compare final build results to `baseline-build.log` (captured at dispatch start)
 
 ### Attribution and Fix Loop
 
-When regressions are detected, the orchestrator attributes failures to tasks, fixes them, and rebuilds commits — the same amend-in-place principle as the Step 3b amendment loop, but across levels.
+When regressions are detected, the orchestrator attributes failures to the affected commits, then uses `git rebase -i` with `edit` actions on those commits to amend them at their historical state. This applies the `git-rebase` skill's Pattern 4 (edit-in-place) paired with Pattern 7 (`--exec`) for per-commit fast-gate validation, and uses Pattern 2 (`GIT_SEQUENCE_EDITOR` script) to drive the plan non-interactively.
 
-1. **Attribute failures to tasks**: Launch a subagent (general or explore agent) to analyze:
-   - Which files have errors
-   - Which tasks modified those files (using `commit-sha` and `files-modified`)
-   - Map errors to responsible task(s)
-   - Save attribution to `dispatch/<run-name>/failure-attribution.md`
+**Why rebase-edit, not the reset-and-rebuild approach used by Step 3b?** Phase 5 fires after every level has committed. Affected commits may sit at any level, with downstream commits already in place. Reset-and-rebuild would have fix agents author against HEAD's end-of-run tree, then re-attribute changes backward to earlier commits — the failure mode where a fix references symbols added by a later commit, producing a history where intermediate commits don't build in isolation. Pattern 4 prevents this by construction: each fix is authored against the historical tree of the commit being amended.
 
-2. **Mark originals**: For each task with attributed failures, transition status from `completed` to `fixing` with `fixing-source: verification`
+**Pre-rebase setup:**
 
-3. **Fix phase** — for each affected task (serialized, same working tree):
-   a. Spawn a fix agent (same agent type as the original task) with:
-      - The build/test failures attributed to this task from `failure-attribution.md`
-      - The task's `plan.md` (original objective for context)
-      - The committed diff (`git show <commit-sha>`)
-      - For cross-task interactions: include context from all attributed tasks
-      - Instruction: do not run any mutating git operations — leave changes uncommitted for the orchestrator to rebuild
-   b. The fix agent updates the task's `files-modified` in `output.yaml` if it modified new files
-   c. Re-run the build gate
+- Verify `backup-branch` is set in `dispatch.yaml` and the branch ref still exists. If not, abort and ask the user before proceeding — the backup is the recovery path if the rebase wedges.
+- Resolve the fast-gate command from `validation.fast-gate` (or use the full `verify` pipeline if `validation.no-fast-gate: true`). If neither is declared, fail the run with a clear message — do not proceed with a no-op gate.
 
-4. **Rebuild commits from earliest affected level forward:**
-   a. Identify the earliest level containing an affected task
-   b. `git reset` (mixed) to the pre-level boundary SHA from `level-boundaries` for that level. The boundary for the earliest affected level is always valid — it points to the commit before that level's work, which is not affected by the rebuild.
-   c. Re-create all commit units from that level through the final level, in topological order, following the same process as Step 3a+ (git add files per unit, commit, record SHA)
-   d. **Update `level-boundaries`** for all rebuilt levels: after committing all units for level N, the current HEAD is the new pre-level boundary for level N+1. Record this in `level-boundaries`. This prevents stale boundaries if a subsequent fix loop iteration targets a different level.
-   e. Update `commit-sha` for all rebuilt tasks. Re-mark all rebuilt tasks as `committed`.
-   f. **Re-run critique** (Step 3b) for each rebuilt level that has critique enabled.
+**Process:**
 
-      **If critique passes for all levels:** proceed to step 5 (re-verify).
+1. **Attribute failures to commits**: Launch a subagent (general or explore) to:
+   - Read `dispatch/<run-name>/final-build.log`
+   - Identify which files have errors
+   - Map errors to responsible commits (using each task's `commit-sha` and `files-modified`)
+   - Save attribution to `dispatch/<run-name>/failure-attribution.md`. The output must list the affected `commit-sha` values explicitly, not only task IDs.
 
-      **If critique finds blocking issues at any level:** do NOT use the single-level amendment loop from Step 3b. The amendment loop assumes no downstream commits exist, which is false here — downstream levels already have commits from step 4c. Instead:
+2. **Record fix-loop state**: For each task whose commit was attributed:
+   - Transition status from `completed` to `fixing` with `fixing-source: verification`.
+   - Update `dispatch.yaml`:
+     - `fix-loop.in-progress: true`
+     - `fix-loop.iteration: <n>` (increment)
+     - `fix-loop.affected-commits: [<sha>, ...]` (topologically ordered)
+     - `fix-loop.rebase-base: <sha>` (parent of the earliest affected commit)
+   - This state is required for resumability — the resume logic uses it to detect mid-rebase crashes.
 
-      1. For each task with blocking critique issues, mark `fixing` with `fixing-source: critique`
-      2. Spawn fix agents for the affected tasks (serialized, same as Step 3b amendment loop step 1): provide the critique issues, the task's `plan.md`, the committed diff, and the git mutation prohibition
-      3. Fix agents update `files-modified` in `output.yaml` if they touched new files
-      4. Re-run the build gate for each fix
-      5. Restart this rebuild step (step 4) from the earliest level that had critique failures — this rebuilds that level's commits and all downstream levels on top of the corrected code
-      6. Re-run critique again for all rebuilt levels (re-entering this step 4f)
+3. **Run the rebase:**
+   a. Build a rebase plan via a `GIT_SEQUENCE_EDITOR` script (per `git-rebase` skill Pattern 2). For each commit between `fix-loop.rebase-base` and HEAD: `pick` if not in `fix-loop.affected-commits`, `edit` if it is. Use explicit `drop` lines for any commits intentionally being removed (none in this loop, but the rule keeps `rebase.missingCommitsCheck` happy and is good hygiene).
+   b. Start the rebase:
+      ```
+      GIT_SEQUENCE_EDITOR=<plan-script> git rebase -i --exec '<fast-gate>' <fix-loop.rebase-base>
+      ```
+      `--exec '<fast-gate>'` runs the fast gate after every replayed commit. The fast gate's contract (see the `validation` block in dispatch.yaml schema): it MUST fail when a commit references a symbol, import, or type defined only in a later commit. Stub commands (`true`, `echo ok`) are forbidden by the schema and must not be plugged in here.
 
-      This inner loop counts toward **critique amendment escalation** (not verification fix escalation). If a task accumulates amendment rounds across both normal execution and Phase 5 rebuilds, the total counts toward the same escalation threshold (round 3 notify, round 4+ ask user). The outer fix loop iteration (steps 1-5) counts separately toward verification fix escalation.
+4. **At each `edit` stop:**
+   a. The rebase pauses with HEAD pointing at the original SHA, working tree at that commit's historical state.
+   b. Identify which commit this is by inspecting `git rev-parse HEAD` against `fix-loop.affected-commits` and matching to a commit unit (use the commit message subject to locate the originating tasks).
+   c. Spawn a fix agent (same agent type as the original task, or `general` for grouped units) with:
+      - The failures attributed to *this specific commit* from `failure-attribution.md`
+      - The `plan.md` for each task in the commit unit
+      - The committed diff (`git show HEAD`)
+      - **Cross-commit context (orchestrator-injected)**: for each *other* commit in `fix-loop.affected-commits`, include `git show <sha>` output from the original history in the prompt. The fix agent sees only the historical tree on disk but receives downstream context as prompt data, preserving the Pattern 4 invariant while giving the agent enough context to reason about cross-commit interactions.
+      - Instruction: fix only the failures attributed to this commit. Do NOT run any mutating git operations — leave changes uncommitted for the orchestrator to amend.
+   d. Run the full gate (the `verify` pipeline) at this stop. The full gate runs at every `edit` stop; the fast gate runs via `--exec` between stops. Full gate failure at a stop means the fix is incomplete — the fix agent must resolve before proceeding.
+   e. `git add` the changed files (use the working tree, not `files-modified` — the rebase-edit model amends the in-place commit's tree directly).
+   f. `git commit --amend --no-edit` (or `--amend -F <message-file>` if the fix requires a message change).
+   g. `git rebase --continue`. The `--exec` fast-gate fires on this commit immediately, and on each subsequent replayed commit.
 
-      **Resume during this nested operation:** if interrupted while fixing critique issues during a Phase 5 rebuild, the affected tasks will be in `fixing` with `fixing-source: critique` and `commit-sha` pointing to a potentially stale SHA. The resume logic for `fixing` + `fixing-source: critique` handles this: check if `commit-sha` exists in git log, rebuild if needed, re-enter critique.
+5. **After the rebase completes:**
+   a. **Zombie-rebase check** (per `git-rebase` skill, "Safety first"): verify neither `.git/rebase-merge/` nor `.git/rebase-apply/` exists. If either is present, the rebase was paused, not completed — investigate. Do not trust `git rebase`'s exit code alone.
+   b. **Content sanity check**: `git diff <backup-branch> HEAD --stat`. The diff should reflect only the intended fixes. A large unexpected diff means the rebase replayed something incorrectly — abort and recover from backup.
+   c. Walk `<fix-loop.rebase-base>..HEAD` and update `commit-sha` in `dispatch.yaml` for every task whose commit was replayed. Picked (non-amended) commits get new SHAs too as a consequence of preceding amends; match commit subjects to tasks to re-attribute.
+   d. Update `level-boundaries` for all levels whose first-commit SHA changed.
+   e. Re-mark affected tasks as `committed`.
 
-5. **Re-verify**: Run full build again, compare to baseline
-   - If matches baseline: exit loop, proceed to Phase 6
-   - If new failures remain: return to step 1
+6. **Re-run critique** for each rebuilt level that has critique enabled. If critique finds blocking issues, the new findings feed back into the same rebase-edit machinery:
+   - Identify the commits with blocking issues using each task's updated `commit-sha`.
+   - Add them to `fix-loop.affected-commits`, recompute `fix-loop.rebase-base` (parent of the earliest newly-affected commit, which may move earlier in history than the previous iteration), increment `fix-loop.iteration`.
+   - Goto step 3 with the expanded affected set.
 
-6. **Repeat** until verification passes or escalation triggers user intervention
+   This unifies critique-driven and regression-driven fixes under one rebase-edit mechanism. Counts toward critique amendment escalation, not verification fix escalation. Multiple iterations against the same task across normal execution and Phase 5 critique rebuilds accumulate toward the round 3 notify / round 4+ ask threshold.
+
+7. **Re-verify**: Run the full build, compare to baseline.
+   - If matches baseline: clear `fix-loop` in `dispatch.yaml` (set `in-progress: false`, leave iteration/affected-commits for postmortem), exit loop, proceed to Phase 6.
+   - If new failures remain: return to step 1 with the new failure set.
+
+8. **Repeat** until verification passes or verification fix escalation triggers user intervention.
+
+**Rebase failure modes and recovery:**
+
+- **`--exec` fails on a picked (non-affected) commit:** the fast gate caught a commit that doesn't build in isolation — the precise pathology this loop exists to detect. `git rebase --abort`, add the failing commit to `fix-loop.affected-commits`, return to step 3 with the expanded set. The picked-then-failed commit becomes an `edit` action next iteration.
+- **Conflict during replay of a picked commit:** a previous amend changed code that the picked commit also modifies. `git rebase --abort`, add the conflicting commit to `fix-loop.affected-commits`, return to step 3. Letting it amend at its historical state surfaces the interaction explicitly.
+- **Fix agent fails at an `edit` stop** (cannot produce a working fix): report to user. Offer to abort the rebase and restart the fix loop from a fresh attribution, or escalate.
+- **Any unrecoverable state:** `git rebase --abort`, `git reset --hard <backup-branch>`, clear `fix-loop` from `dispatch.yaml`, report to user. The user can choose to restart Phase 5 from scratch or abandon the run.
 
 ## Fix Approach
 
-Both critique-driven fixes (Step 3b amendment loop) and verification-failure fixes (Phase 5 fix loop) use the same approach: spawn a fix agent to correct the issues, then rebuild commits from the affected level forward. Neither mechanism creates separate "fix tasks" in the manifest — fixes are amendments to existing tasks' commits, not new entries in the DAG.
+Two fix mechanisms operate at different scopes:
+
+- **Step 3b amendment loop (within-level)**: Reset-and-rebuild. Fix agents author at end-of-level state, the orchestrator resets to the pre-level boundary, and rebuilds the level's commits using `files-modified` attribution. Correct here because commit units within a level are independent and there are no downstream commits to conflict with. Per-commit fast-gate validation after rebuild catches the residual cross-unit-boundary risk.
+- **Phase 5 fix loop (across-level)**: Rebase-edit. The orchestrator uses `git rebase -i` with `edit` actions on affected commits and `--exec '<fast-gate>'` for per-commit validation (per `git-rebase` skill Patterns 4 and 7). Fix agents author at the historical tree of each affected commit. Downstream commits replay naturally; only affected commits change. Required here because reset-and-rebuild would let fixes reference symbols added by downstream commits and produce a history where intermediate commits don't build.
+
+Neither mechanism creates separate "fix tasks" in the manifest — fixes are amendments to existing tasks' commits, not new entries in the DAG.
 
 This means the manifest's task list only contains planned tasks. Fix work is tracked through:
 - The task's status (`fixing` → `committed` → `completed` after rebuild)
 - Amendment round gate files (`level<N>-amend-round<R>-gate-critique.yaml`)
-- Phase 5 fix loop artifacts (`failure-attribution.md`, `final-build.log`)
+- Per-commit validation logs (`level<N>-amend-round<R>-percommit-<sha>.log`)
+- Phase 5 fix loop artifacts (`failure-attribution.md`, `final-build.log`, the `fix-loop` block in `dispatch.yaml`)
 
 ## Phase 6: Commit Consolidation
 
@@ -1450,7 +1545,8 @@ When all tasks are completed, verification passes, and commit consolidation is d
    - Files modified across all tasks
    - Commits created
    - Verification results
-3. Ask the user whether to keep or clean up the `dispatch/` directory
+3. Delete the pre-dispatch backup branch: `git branch -D <backup-branch>` using the name recorded in `dispatch.yaml`. The run completed successfully; the backup is no longer load-bearing.
+4. Ask the user whether to keep or clean up the `dispatch/` directory
 
 ## Resumability
 
@@ -1492,7 +1588,13 @@ This section describes how to resume a dispatch run. **Note:** This logic is inv
    - `failed`: present at Checkpoint, ask to retry or skip
    - `fixing`: the fix-and-rebuild cycle was interrupted. Check `fixing-source` to determine which mechanism to re-enter:
      - `critique`: the Step 3b amendment loop was interrupted. Check if `commit-sha` exists in git log. If yes, rebuild the level's commits and re-enter the amendment loop (Step 3b). If the commit is missing, reset the task and all tasks at its level to `pending`.
-     - `verification`: the Phase 5 fix loop was interrupted. Re-enter Phase 5 (re-run full build, compare to baseline, continue fix loop if regressions remain).
+     - `verification`: the Phase 5 rebase-edit fix loop was interrupted. Mid-rebase state has too many partial-fix-agent-output edge cases to recover reliably. Abort and restart cleanly:
+       1. If `.git/rebase-merge/` or `.git/rebase-apply/` exists: `git rebase --abort` (releases the in-flight rebase).
+       2. Verify `backup-branch` is set in `dispatch.yaml` and the branch still exists. If missing, halt and ask the user — recovery without the backup requires manual reflog work.
+       3. `git reset --hard <backup-branch>` to restore the pre-dispatch state.
+       4. Replay completed levels' commits up to the start of Phase 5 by re-running Step 3a+ for each level in order (the orchestrator already has each task's `files-modified` and the level-boundaries; recreating commits is deterministic). This restores history to the post-execution / pre-verification state.
+       5. Clear the `fix-loop` block in `dispatch.yaml` (set `in-progress: false`, reset iteration/affected-commits/rebase-base).
+       6. Re-enter Phase 5 from the start: re-run the full build, re-attribute failures (which may differ from the interrupted iteration), restart the rebase from a fresh plan. Fix agent work from the interrupted iteration is lost — this is the accepted cost of clean recovery. The `git-rebase` skill recommends abort-and-restart as the safe default for the same reason.
    - `pending`: proceed normally
 3. After handling interrupted tasks, proceed from Phase 4, Step 1
 
@@ -1515,6 +1617,9 @@ The orchestrator and subagents agree on the following:
 | `output.yaml` | Task results (source of truth) | Subagent (Orchestrator for `explore` agents) | Orchestrator |
 | `level<N>-gate-critique.yaml` | Gate verdict for planned tasks at level N | Critique agent | Orchestrator |
 | `level<N>-amend-round<R>-gate-critique.yaml` | Gate verdict for amendment round R at level N | Critique agent | Orchestrator |
+| `level<N>-amend-round<R>-percommit-<sha>.log` | Per-commit fast-gate output for Step 3b validation | Orchestrator | Human (postmortem) |
+| `failure-attribution.md` | Phase 5 failure-to-commit mapping | Attribution agent | Orchestrator |
+| `final-build.log` | Phase 5 final verification output | Orchestrator | Orchestrator + attribution agent |
 | Task tool return | Diagnostic supplement (advisory) | Subagent | Orchestrator (diagnostics only) |
 | `dispatch.yaml` | Run state and DAG | Orchestrator | Orchestrator |
 | `mutation-test-*.log` (in task dir) | Mutation testing evidence | Critique agent | Human (paths stored in gate-critique.yaml for reference; orchestrator never reads directly) |
