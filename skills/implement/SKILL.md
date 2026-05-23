@@ -136,7 +136,9 @@ Mark the current task `completed` with `TaskUpdate`. Move to the next unit of wo
 
 **Don't shortcut the loop.** The value is in the discipline. Skipping Greybeard "because this change is simple" or skipping Critique "because the build passes" defeats the purpose.
 
-**Keep commits focused.** If Critique finds something wrong outside the scope of the current commit, note it for a later commit rather than expanding scope mid-loop.
+**Keep commits focused, but do not drop findings.** When Critique surfaces something outside the current commit's scope, every finding must be assigned one of four dispositions: (a) fix in the current commit, (b) commit it separately on this branch, (c) file a new issue with concrete acceptance criteria, or (d) accept it as-is. "Out of scope" is not a disposition. "Note it for later" is not a disposition unless you also say which of (a)–(d) "later" means.
+
+**Disposition (d) always requires operator approval** — neither you nor greybeard can drop a finding on your own. For (c), the issue must be filed in this session, with its ID or URL in the status update; a promise to file it later is dropping the work. If you are orchestrated by karen, route the decision through karen's section 9 procedure (consult greybeard, paste his recommendation verbatim, escalate to the operator for any "accept as-is" or any unclear answer). If you are running directly, consult the operator before choosing (c) or (d).
 
 **Build must pass before every commit, amend, and rebase stop.** Never commit code that doesn't compile or pass tests. Fix build failures first, then commit, amend, or continue the rebase.
 
