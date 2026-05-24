@@ -165,6 +165,27 @@ Good (review comment): "`bar()` is being called here without checking its return
 
 Past-tense framing rots: as the branch evolves through review, descriptions of "what was changed" stop matching the diff. Present-tense framing of "what the code now does" stays correct as long as the diff is correct.
 
+## Cite the Check
+
+A review report may include affirmative verification claims — "tests pass," "messages are clean," "no regressions," "convention compliance verified." When a review says something is *verified*, the reader takes that as a checked fact. If the check was never run, the report is dishonest. The dishonesty does not surface until a human reviewer finds the issue the agent claimed did not exist.
+
+**For every affirmative claim in your review, you must be able to cite the specific check that proved it.** A check is a concrete artifact: a command whose output you read, a tool invocation whose results you inspected, a file/line range you examined for a specific pattern. "I considered it" and "it looked fine to me" are not checks.
+
+When you cannot cite a check, do one of:
+
+1. **Run the check** and cite it.
+2. **Strike the claim** from the report.
+3. **Narrow the claim to what you actually examined.** "Did not observe race conditions in `lock.go:42-68`" is honest; "no race conditions in the new locking code" is not.
+
+Some properties — subtle concurrency bugs, performance pathologies, security gaps — cannot be fully verified by a single check. Honest narrowing is better than a dishonest absolute: say what you looked at and what you looked for, and do not claim absence beyond that boundary.
+
+**Bad → Good:**
+
+- "All commit messages are clean." → cite the specific audit command (see *Commit-Message Style Audit*), or strike.
+- "Tests pass." → "`npm test` exited 0," or strike.
+- "Convention compliance verified." → "diffed naming and error-handling shape in the new handlers against `src/api/user.ts` and `src/api/billing.ts`; same `Result<T, E>` return pattern, same `assert`-style guards," or strike.
+- "No race conditions." → "read `lock.go:42-68`, traced lock acquisition order; no acquire-while-holding cycles in those lines. Did not analyze interactions with `pool.go` or callers outside the diff."
+
 ## Commit-Message Coherence
 
 Each commit's message is a claim about what the commit contains. Verify that
@@ -232,7 +253,7 @@ git log <base>..HEAD --format='%b' | awk 'length > 72'
 
 Empty output is clean. Any line returned is an over-72-character body line.
 
-**Cite the command that proved each affirmative claim.** If your review report says "commit messages are clean," "no prefix violations," "no filenames in subjects," or any other affirmative verification, you must be able to point at the specific audit above whose output you read to conclude that. A report that asserts compliance without naming the check that proved it is a guess, not a verification — strike the claim or run the check.
+Affirmative claims about these audits must cite the specific command whose output proved them — see **Cite the Check**.
 
 ## Review Checklist
 
@@ -244,4 +265,4 @@ Empty output is clean. Any line returned is an over-72-character body line.
     - Diff matches the commit message (see "Commit-Message Coherence")
     - Subject and body pass the style audit (see "Commit-Message Style Audit")
 6. Check that new code follows project conventions
-7. Summarize findings with specific file:line references; cite the audit command behind any affirmative claim (see "Commit-Message Style Audit")
+7. Summarize findings with specific file:line references; cite the check behind any affirmative claim (see "Cite the Check")
