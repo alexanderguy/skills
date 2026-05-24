@@ -75,7 +75,19 @@ Commits should read like a story, allowing others and future-you to understand w
 - Separate formatting/whitespace fixes from logical changes
 - Each commit should represent one logical unit of work
 - **Amend** (`git commit --amend`) to refine the most recent commit (e.g., critique fixes, wording changes, missed files)
-- **Fixup** (`git commit --fixup=<sha>` + `git rebase --autosquash`) to fix an earlier unpushed commit when a later review reveals a problem that belongs on that commit, not HEAD
+- **Edit-in-place** to fix an earlier unpushed commit when a later review reveals a problem that belongs on that commit, not HEAD. Mark the target `edit` in the rebase todo, make the fix at the stop, amend, and continue. The fix is authored against the target commit's historical tree, which keeps the change intent-correct against the right baseline — downstream commits may still produce a replay conflict if they touch the same lines, but resolving that conflict is straightforward because both sides of it are coherent diffs.
+
+```
+git rebase -i origin/main           # substitute your project's base branch
+# In the editor, change "pick abc1234 ..." to "edit abc1234 ..."
+# git stops with the target commit checked out
+# ... make the fix ...
+git add <files>
+git commit --amend --no-edit
+git rebase --continue
+```
+
+For more elaborate history surgery — scripted plans, multiple targets, splits, per-commit validation — search your available skills for one whose description covers git rebase or branch-history cleanup, and load it when the simple form above is not enough.
 
 **Message Format:**
 

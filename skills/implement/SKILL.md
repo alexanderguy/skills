@@ -119,7 +119,18 @@ Ask Critique to review the committed change.
 2. Read its findings
 3. For each issue marked VERIFIED or HIGH confidence: fix it
 4. Re-run the build gate (Step 3) to verify fixes
-5. Land the fixes on the right commit. If the target is HEAD, `git commit --amend`. Otherwise load the `git-rebase` skill and follow its guidance to pick between Pattern 4 (edit-in-place) and Pattern 5 (fixup + autosquash). Re-run the build gate after the rebase completes.
+5. Land the fixes on the right commit. If the target is HEAD, `git commit --amend`. Otherwise use `git rebase -i` with `edit` on the target commit:
+
+    ```
+    git rebase -i <base-branch>
+    # In the editor, change "pick <sha> ..." to "edit <sha> ..."
+    # ... make the fix at the stop ...
+    git add <files>
+    git commit --amend --no-edit
+    git rebase --continue
+    ```
+
+    If the situation calls for more elaborate history surgery, search your available skills for one whose description covers git rebase or branch-history cleanup, and load it. Re-run the build gate after the rebase completes.
 6. Ask Critique to review `git show HEAD` again. Re-include the original intent from Step 1 and tell it what you fixed since the last pass so it can focus on verifying the fixes and checking for new issues rather than re-reviewing the entire change from scratch.
 7. Repeat until Critique comes back clean or all remaining findings are acknowledged and intentional
 

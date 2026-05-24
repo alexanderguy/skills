@@ -85,7 +85,7 @@ Brief the subagent with:
 
 Treat the returned findings as a worklist:
 
-- Fix issues in additional commits, or via `git commit --fixup=<sha>` + `git rebase --autosquash` when a fix belongs on an earlier commit.
+- Fix issues in additional commits, or via `git rebase -i` with `edit` on the target commit when a fix belongs on an earlier commit (mark the target `edit`, make the fix at the stop, `git commit --amend --no-edit`, `git rebase --continue`).
 - Re-dispatch the review subagent only after a fix round, and brief it to focus on the files touched since the previous review (pass the changed paths explicitly). Findings on untouched files from the previous round carry over without re-review.
 - Cap re-reviews at three rounds. If major findings remain after the third round, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix cycles and the code still has unresolved major issues, list each outstanding finding with its category (correctness / safety / scope / build-test / convention) and `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
 
