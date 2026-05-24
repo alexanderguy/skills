@@ -57,6 +57,12 @@ Do not use these markers for:
 
 If you could do it now, do it now. A TODO is a promise to the reader that the work cannot be done yet; abusing the marker for work you simply chose not to do is dishonest and accumulates as dead weight in the codebase.
 
+### Comments describe the current code
+
+Code comments speak for the commit they appear in. Do not write comments that refer to other commits — neither what an earlier commit changed nor what a planned follow-up commit will do. A comment like `// stub; next commit fills this in` is wrong the moment that follow-up is reordered, dropped, or read by someone who reverted past it. If the code is intentionally a stub now, say *why it is a stub now*, not what is supposed to replace it.
+
+This holds even when you have a multi-commit plan in context — a planned commit does not exist until it lands, and the comment must be accurate for the commit it lives in, standing alone.
+
 ## Git Workflow
 
 ### Commit Messages
@@ -104,7 +110,7 @@ A commit message must stand alone. Do not reference:
 - File paths or filenames — the diff already lists what changed
 - External tracking systems (Linear, Jira, GitHub issues) — they may move, be renamed, or be inaccessible to future readers; the commit must explain *itself*, not point to an explanation elsewhere
 - PR review comments, prior conversations, or other ephemeral discussions
-- The commit's position in a branch or series ("as discussed in the previous commit")
+- The commit's position in a branch or series, in either direction — neither prior commits ("as discussed in the previous commit") nor upcoming ones ("the next commit wires this up"). A commit describes the state of the repo at that commit, not the branch's trajectory. This holds even when you know exactly which commits are planned to land next: a follow-up commit you intend to write does not yet exist, and a reader landing on this commit (or reverting past the planned one) will not see it.
 
 Someone reading `git log` years from now, with only the repo in hand, should understand the change without leaving the message.
 
