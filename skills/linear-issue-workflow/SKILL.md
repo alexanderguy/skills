@@ -29,7 +29,30 @@ Ask the user clarifying questions if the scope is unclear before proceeding.
 
 3. Present the plan to the user and ask if they would like any changes before proceeding. Do not start implementation until the user approves the plan.
 
-4. Optionally attach the plan to the Linear issue as a comment using `mcp__linear__save_comment`.
+4. Attach the plan as a file to the Linear issue. **Do not post the plan as a comment** — comments are for discussion, not archives, and a multi-page plan dumped inline creates noise on the issue.
+
+   The procedure has four steps, three of which are MCP or HTTP calls. The signed upload URL from `prepare_attachment_upload` expires 60 seconds after it is returned, so steps 2 and 3 must happen in immediate succession — do not pause for unrelated work between them.
+
+   1. Write the plan to a file under `tmp/` (e.g., `tmp/plan-<ISSUE-ID>.md`). `tmp/` is the project's throwaway directory — do not commit the file (and if the project does not yet have `tmp/` gitignored, do not add to git). Capture its byte size with `wc -c < tmp/plan-<ISSUE-ID>.md`.
+
+   2. Call `mcp__linear__prepare_attachment_upload` with `issue`, `filename`, `contentType: "text/markdown"`, and `size`. The response contains `uploadRequest.url`, `uploadRequest.headers`, and `assetUrl`. **Step 3 must follow within 60 seconds — the signed URL expires.**
+
+   3. PUT the raw file bytes to `uploadRequest.url`. Pass every header from `uploadRequest.headers` verbatim — exact casing is required; modified or omitted headers return HTTP 403. One `-H` flag per entry:
+
+   ```bash
+   curl -X PUT --data-binary @tmp/plan-<ISSUE-ID>.md \
+     -H "<header1-name>: <header1-value>" \
+     -H "<header2-name>: <header2-value>" \
+     "<uploadRequest.url>"
+   ```
+
+   Do not base64-encode the file, do not transform it. If the PUT fails with 403 because the URL expired (more than 60 seconds since step 2), **call `prepare_attachment_upload` again for a fresh URL** — retrying the dead URL will keep failing.
+
+   4. Call `mcp__linear__create_attachment_from_upload` with `issue`, the `assetUrl` from step 2, `title: "Implementation plan"`, and `subtitle: "<ISSUE-ID>"` (so the entry stays identifiable if multiple plans accumulate across re-plans).
+
+   Delete the local file after the attachment is created — the Linear issue now holds the canonical copy.
+
+   Exception: plans with no structure — no file-by-file breakdown, no enumerated steps, no headings, no nested lists — can be posted as a comment instead. Structural shape, not length, is the test; a single-sentence plan is fine inline, a 10-line bulleted plan is not.
 
 5. Mark the issue as "In Progress" using `mcp__linear__save_issue` with the appropriate state.
 
@@ -183,10 +206,11 @@ git worktree prune
 
 Common operations:
 
-| Action          | Tool                                                       |
-| --------------- | ---------------------------------------------------------- |
-| Fetch issue     | `mcp__linear__get_issue`                                   |
-| Get branch name | `mcp__linear__get_issue` (read `branchName` from result)   |
-| Update status   | `mcp__linear__save_issue` (set the state)                  |
-| Add comment     | `mcp__linear__save_comment`                                |
-| List teams      | `mcp__linear__list_teams`                                  |
+| Action          | Tool                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| Fetch issue     | `mcp__linear__get_issue`                                                                          |
+| Get branch name | `mcp__linear__get_issue` (read `branchName` from result)                                          |
+| Update status   | `mcp__linear__save_issue` (set the state)                                                         |
+| Add comment     | `mcp__linear__save_comment`                                                                       |
+| Attach file     | `mcp__linear__prepare_attachment_upload` → PUT → `mcp__linear__create_attachment_from_upload` (see Phase 2 step 4) |
+| List teams      | `mcp__linear__list_teams`                                                                         |
