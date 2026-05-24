@@ -185,13 +185,63 @@ Do not require that every modified line be individually narrated in the message.
 The message is a summary. But if someone reading only the message would be
 surprised by what the diff actually contains, that is a problem worth raising.
 
+## Commit-Message Style Audit
+
+Coherence (above) checks that each message accurately describes its diff. Style audit checks that each message conforms to the project's commit-message rules (see the `style` skill, which is the canonical source for the prefix-family list and other rules). The two are independent; both have to be run.
+
+A subagent dispatched with "verify style compliance" will return a generic "looks fine" read. Each check below must be requested by name and produce output the reviewer actually inspects.
+
+**Subject-line audits.** Most checks scan the output of:
+
+```bash
+git log <base>..HEAD --format='%s'
+```
+
+Scan for:
+
+- **Prefix violations.** Any subject starting with a `word:`, `[tag]`, or `(scope)` pattern. Includes Conventional Commits (`feat:`, `fix:`), component or scope prefixes (`Anthropic adapter:`, `mm:`, `[X86]`), ticket IDs (`INTR-79:`), and status tags (`WIP:`). Project convention is plain English sentences; any prefix is a violation regardless of how idiomatic it looks in other ecosystems.
+- **Filename or path references.** Tokens that look like file paths or extensions (`server.ts`, `INFERENCE.md`, `src/foo/bar.py`). The diff lists what changed; subjects describe the change, not the file.
+- **Trailing punctuation.** Subjects ending with `.`, `!`, or `?`.
+- **Vague subjects.** "Update code," "Fix bug," "Misc changes," "Address review."
+
+For the length limit, use a length-aware filter so the check is not eyeball-counting:
+
+```bash
+git log <base>..HEAD --format='%s' | awk 'length > 72'
+```
+
+Empty output is clean. Any line returned is an over-72-character subject violation.
+
+**Body audits.** Most checks scan the output of:
+
+```bash
+git log <base>..HEAD --format='%b'
+```
+
+Scan for:
+
+- **External tracker references.** Linear/Jira/GitHub IDs (`INTR-79`, `JIRA-1234`, `#456`, `Closes XXX-99`). The commit must explain itself.
+- **References to other commits in the series.** "as discussed in the previous commit," "the next commit wires this up," "see also abc1234." A commit describes its own state, not the branch's trajectory.
+- **References to PR review comments or session conversation.** Ephemeral context the future reader cannot access.
+
+For body-line length, use the same length-aware filter:
+
+```bash
+git log <base>..HEAD --format='%b' | awk 'length > 72'
+```
+
+Empty output is clean. Any line returned is an over-72-character body line.
+
+**Cite the command that proved each affirmative claim.** If your review report says "commit messages are clean," "no prefix violations," "no filenames in subjects," or any other affirmative verification, you must be able to point at the specific audit above whose output you read to conclude that. A report that asserts compliance without naming the check that proved it is a guess, not a verification — strike the claim or run the check.
+
 ## Review Checklist
 
 1. Determine the base branch using the methods in "Base Branch Determination"
 2. Run `git log --oneline <base>..HEAD` to understand the scope
 3. Run `git diff <base>...HEAD --stat` to see which files changed
 4. Review each changed file, focusing only on lines modified by the branch
-5. Verify that each commit's diff matches its commit message (see
-   "Commit-Message Coherence") — this can be done during or after step 4
+5. For every commit on the branch, verify:
+    - Diff matches the commit message (see "Commit-Message Coherence")
+    - Subject and body pass the style audit (see "Commit-Message Style Audit")
 6. Check that new code follows project conventions
-7. Summarize findings with specific file:line references
+7. Summarize findings with specific file:line references; cite the audit command behind any affirmative claim (see "Commit-Message Style Audit")

@@ -95,24 +95,45 @@ For more elaborate history surgery — scripted plans, multiple targets, splits,
 - **Blank line**: Required between summary and body (if body exists)
 - **Body lines**: Max 72 characters each
 
-Some projects use a "Conventional Commits" prefix format (e.g. `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`). Do not use this style. Summary lines should be plain English sentences with no abbreviations, no prefixes, and should not end with punctuation.
+**Before drafting a subject, sample the project's existing log:**
+
+```bash
+git log origin/main --format='%s' | head -20
+```
+
+The existing commits document the project's actual subject convention — verb tense, level of detail, voice, capitalization. Match what is there.
+
+The project's log can override the no-prefix rule below, but only when the recent history is **predominantly** prefixed in a single consistent convention — i.e., the prefix is the obvious shape of the last ~20 commits, not a minority pattern visible in a few. Mixed signals fall through to the no-prefix rule; tie goes to no prefix.
+
+**No subject prefixes.** Summary lines are plain English sentences that start with a verb and describe the change directly. Do not prefix the subject with anything — no tag, no scope, no category, no ticket ID, no severity marker. This is a flat rule across every prefix convention, including:
+
+- Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`
+- Scope or component prefixes: `Anthropic adapter:`, `mm:`, `[X86]`, `drivers/net:`, `frontend:`
+- Ticket IDs: `INTR-79:`, `JIRA-1234:`, `#456:`
+- Status or severity tags: `WIP:`, `[urgent]`, `(security):`
+
+Several of these patterns are widespread in well-known projects (Linux kernel, LLVM, Conventional-Commits-adopting projects) and feel idiomatic from sheer exposure. They are still banned here. Familiarity is not a justification.
+
+Summary lines also use no abbreviations and do not end with punctuation.
 
 **Good examples:**
 
 ```
 Add retry logic for failed network requests
-
 Fix race condition in transaction verification
-
 Document API response format
 ```
 
 **Bad examples:**
 
 ```
-feat: add retry logic
-Update code (too vague)
-Fix bug in server.ts (includes filename)
+feat: add retry logic                  (Conventional Commits prefix)
+Anthropic adapter: handle 429s         (component-scope prefix)
+INTR-79: add retry logic               (ticket-ID prefix)
+[WIP] refactor the parser              (status tag)
+Update code                            (too vague)
+Fix bug in server.ts                   (filename in subject)
+Document INFERENCE.md updates          (filename in subject)
 ```
 
 **Self-contained:**
