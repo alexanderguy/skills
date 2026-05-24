@@ -72,42 +72,37 @@ Break the work into commit-sized units. Each commit should represent one logical
 
 ## Phase 5: Self-Review
 
-Before pushing, dispatch the `critique` subagent to review the branch using the `code-review` skill. Running the review in a subagent keeps its full output out of the main context and gives an independent read of the diff.
+Once implementation is complete, run a **whole-branch code review** before pushing. The review covers the entire diff from the base branch to HEAD — not just the most recent commit — so any finding anywhere in the branch's history is in scope.
+
+Dispatch the `critique` subagent to run the review using the `code-review` skill. Running it in a subagent keeps its full output out of the main context and gives an independent read of the diff.
 
 Brief the subagent with:
 
 - The absolute path to the worktree (it must `cd` there before doing anything else).
-- The base branch to diff against (the remote default branch resolved in Phase 3, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path.
+- The base branch to diff against (the remote default branch resolved in Phase 3, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path. Make explicit that the review must cover the full `base..HEAD` range, every commit on the branch.
 - An instruction to load the `code-review` skill and follow its checklist against the current branch.
 - The Linear issue ID and a one-line summary of the intended change, so the reviewer can judge scope.
 - A request for a punch list of findings with `file:line` references — not PR-comment prose.
 - An instruction that the subagent's final message must be the full punch list verbatim, with no summarization or omission. The main agent will only see what the subagent returns; anything left out is lost.
 
-Treat the returned findings as a worklist:
+### Fix every finding
+
+Treat the returned findings as a worklist and **fix every one**. The `code-review` skill's "Signal Over Noise" guidance has already filtered out pedantic taste-only nitpicks upstream — anything that survived to the punch list is something the reviewer judged worth the author's time. "Nit," "minor," "stylistic," and "suggestion" describe the reviewer's confidence about severity; they are not dispositions and do not authorize skipping. The only path to leaving a finding unfixed is a Greybeard waiver (see below).
 
 - Fix issues in additional commits, or via `git rebase -i` with `edit` on the target commit when a fix belongs on an earlier commit (mark the target `edit`, make the fix at the stop, `git commit --amend --no-edit`, `git rebase --continue`).
-- Re-dispatch the review subagent only after a fix round, and brief it to focus on the files touched since the previous review (pass the changed paths explicitly). Findings on untouched files from the previous round carry over without re-review.
-- Cap re-reviews at three rounds. If major findings remain after the third round, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix cycles and the code still has unresolved major issues, list each outstanding finding with its category (correctness / safety / scope / build-test / convention) and `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
+- After fixing, re-dispatch the review subagent against the full branch as it now stands. Every re-review is a fresh, self-contained read of `base..HEAD` exactly as it is — no scoping to the delta from a prior pass, no carryover ledger of earlier findings. The new punch list is the only worklist; the previous one is gone.
+- Repeat fix-and-review until the review returns clean.
+- Cap at three re-reviews. If findings remain after the third, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix passes and the reviewer is still finding issues, list each outstanding finding with its `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
 
-### Gate
+### Waivers
 
-Major findings block Phase 6. A finding is **major** if any of the following hold:
-
-- Correctness: the change is buggy, breaks existing behavior, or fails to do what the Linear issue asked for.
-- Safety: introduces a security issue, swallows errors, removes a defensive check, or risks data loss.
-- Scope: includes substantive changes unrelated to the issue, or omits something the issue explicitly required.
-- Build/test: leaves the build or test suite broken.
-- Convention: violates a project convention in a way that would be rejected on human review.
-
-Do not push until every major finding is either fixed (re-run the review to confirm the pattern is gone from the diff) or waived. Minor findings (nits, stylistic preferences, suggestions) do not gate the push, but you should still fix any that are material improvements — clearer naming, removing dead code, tightening a confusing branch, etc. Only drop a minor finding to the disposition note if fixing it would be pure churn (taste-only rewording, unrelated refactors, or changes the project has explicitly chosen not to make).
-
-Greybeard is the arbiter for judgment calls. Whenever you are unsure whether a finding is major, want to waive one, or want to disagree with the reviewer, dispatch the `greybeard` subagent with the finding, your proposed disposition, and the relevant diff. **A Greybeard "waive" ruling is the waiver** — record it in the disposition note and move on; no further user sign-off is needed. Accept Greybeard's call by default. Escalate to the user only if (a) you actively disagree with Greybeard's ruling, or (b) the Greybeard subagent is unreachable or returns an unusable response. In either case, present both positions (or the failure mode) and let the user decide. Do not route routine judgment calls through the user.
+The only path to leaving a finding unfixed is a Greybeard waiver. If you believe a finding should not be fixed — because the "fix" would be pure churn (taste-only rewording, unrelated refactor, change the project has explicitly chosen not to make) or because you actively disagree with the reviewer — dispatch the `greybeard` subagent with the finding, your proposed disposition, and the relevant diff. **A Greybeard "waive" ruling is the waiver** — record it in the disposition note and move on; no further user sign-off is needed. Accept Greybeard's call by default. Escalate to the user only if (a) you actively disagree with Greybeard's ruling, or (b) the Greybeard subagent is unreachable or returns an unusable response. In either case, present both positions (or the failure mode) and let the user decide. Do not route routine waiver requests through the user, and never waive a finding on your own authority.
 
 The full punch list returned by the review subagent (and, if a re-review happened, the carried-over plus newly-reported findings, deduplicated) is what gets posted to the PR in Phase 6. Keep it intact.
 
 ## Phase 6: Push and PR
 
-Once the Phase 5 gate has cleared (all major findings either fixed or waived), ask the user for confirmation before pushing and creating the PR.
+Once the Phase 5 gate has cleared (the review returned clean, or every remaining finding has a Greybeard waiver), ask the user for confirmation before pushing and creating the PR.
 
 ### Push and create PR
 
@@ -150,7 +145,7 @@ EOF
 
 ### Post the self-review
 
-After the PR is created, post the review output captured in Phase 5 as a PR comment, with a brief note on how each finding was addressed (fixed, deferred, disagreed):
+After the PR is created, post the review output captured in Phase 5 as a PR comment, with a brief note on how each finding was addressed (fixed or Greybeard-waived):
 
 ```bash
 gh pr comment --body "$(cat <<'EOF'
@@ -160,7 +155,7 @@ gh pr comment --body "$(cat <<'EOF'
 
 ### Disposition
 
-- <finding>: <fixed in <sha> | deferred — <reason> | disagreed — <reason>>
+- <finding>: <fixed in <sha> | waived (Greybeard, <one-line ruling>)>
 EOF
 )"
 ```
