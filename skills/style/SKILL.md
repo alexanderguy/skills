@@ -149,17 +149,19 @@ Someone reading `git log` years from now, with only the repo in hand, should und
 
 **Body content — what belongs in a commit message:**
 
-The failure mode this rule prevents is over-explanation of the change itself — bodies that paraphrase the diff or document the code instead of giving the reader context the repo cannot. A commit body is for things specific to *this change* that would be lost if not captured here: why the change was made, what motivated this approach over alternatives, constraints or trade-offs that shaped the decision, non-obvious consequences a future reader needs to know about.
+**Write for a stranger reading `git log` years from now, not for the person reviewing this PR.** The reviewer has the conversation, the ticket, the prior state of the code; the future reader has only the message and the diff. Most length problems dissolve once the audience is right: anything you would write *because the reviewer would appreciate seeing your reasoning* almost certainly does not belong.
 
-A commit body is not a substitute for documentation that belongs elsewhere. Before writing a line of body, ask where that information actually lives:
+**Most commits do not need a body.** A clear subject and a coherent diff are usually enough. Add a body only when the diff would leave a future reader genuinely unable to answer *why* this change. If you are reaching for a body to demonstrate the change was considered, or to preempt questions from the reviewer, that is not the body's job.
 
-- **Describes what the code does** → the code already says this. Cut it.
-- **Describes how the system works in general** → belongs in repo documentation (README, design docs). If the docs are missing or wrong, update them in this commit; don't smuggle the explanation into the commit message.
-- **Describes why a specific line or block exists, and the rationale meets the bar in "Avoiding Redundant Comments"** → put it in a code comment at that line, not in the body. If the rationale doesn't meet that bar, it doesn't belong in a comment *or* the body.
-- **Walks through the diff file-by-file or restates what the diff shows** → cut it. (The "Self-contained" rule above already bans naming files; this extends the same principle to structural narration of the diff.)
-- **Recaps the conversation, review, or planning that led to the change** → already covered by "Self-contained" above. Listed here as a reminder: it is one of the most common ways bodies get bloated.
+When a body is warranted, it carries one thing: the motivation that would otherwise leave the diff looking arbitrary — why this change, why now, why not the obvious alternative. Information about the *code's behavior*, even non-obvious behavior, does not belong here: future callers do not read `git log`, they read the code, so a comment on the affected function or a line in the relevant documentation file is the right home. Surrounding context — the alternatives explored, the work that led here, the broader trade-off landscape — does not belong either, even when it feels load-bearing in the moment. Before writing a line of body, ask where that information actually lives:
 
-What remains after those cuts — the motivation, the reasoning, the trade-offs, the non-obvious consequences — is what the body is for. Write that, in as many or as few lines as it honestly takes.
+- **Describes what the code does** → the code already says this. Cut.
+- **Describes how the system works in general** → belongs in repo documentation. If the docs are wrong, fix them in this commit; don't smuggle the explanation into the message.
+- **Describes why a specific line exists, or how a specific block behaves** → if it meets the bar in "Avoiding Redundant Comments," it goes in a code comment at that location, or in the documentation file describing the behavior. Future callers read the code, not the commit log. If it doesn't meet that bar, it goes nowhere.
+- **Walks through the diff file-by-file** → cut. The diff is right there.
+- **Recaps the conversation, review, retrospective, or planning that led to the change** → cut. This is the single most common source of bloat. That the work was hard, that three alternatives were considered, that the change came out of an incident review, is not load-bearing for the future reader.
+
+What remains is the body. It should be short — typically one short paragraph, rarely more than two. If your draft is materially longer, you are almost certainly violating one of the bullets above (most often the conversation-recap one). The fix is to cut, not to justify.
 
 **Good body:**
 
@@ -176,17 +178,19 @@ across clients without losing the backoff guarantee.
 **Bad body (same change):**
 
 ```
-Update retry logic in client.ts.
+Switch retries to exponential backoff with full jitter.
 
-Changes the retry loop in send() to use exponential backoff instead
-of a fixed interval. The new code computes a delay of
-random(0, base * 2^attempt) on each iteration and sleeps for that
-duration before retrying. Also updates the unit tests in
-client.test.ts to cover the new behavior. See the discussion in
-the PR for why we picked full jitter.
+The original retry implementation used a fixed interval. After
+last quarter's rate-limiter incident we spent a few sessions
+working through the right replacement. We discussed whether to
+gate the change behind a feature flag and decided against it
+since the new behavior is strictly better. Full jitter
+decorrelates retries across clients without losing the backoff
+guarantee. Unit tests have been updated. See the PR discussion
+for the full reasoning.
 ```
 
-The bad version paraphrases the diff (the loop change, the formula, the test update), names files, and points at an external discussion. The good version assumes the reader can read the diff and tells them only what the diff cannot: *why* the old approach was wrong and *why* this specific variant was chosen.
+The bad version is not paraphrasing the diff — it is recapping the work session: the history of the prior code, the incident-and-session framing, the feature-flag discussion, the existence of tests, the pointer to the PR. None of it is load-bearing for a future reader; it is the agent demonstrating to the immediate reviewer that the change was carefully considered. Strip it and the substantive sentence — "full jitter decorrelates retries across clients without losing the backoff guarantee" — is what survives. That is what the good version already says.
 
 ## Naming
 
