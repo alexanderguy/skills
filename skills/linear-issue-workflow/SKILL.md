@@ -93,6 +93,14 @@ Carry out the plan from Phase 2 in the worktree using whichever implementation a
 
 Break the work into commit-sized units. Each commit should represent one logical change that can be reviewed and understood independently.
 
+### Keep the issue checkboxes current
+
+If the issue description contains a task list (`- [ ]` items), tick the boxes as you complete each one. The checkboxes are the issue's at-a-glance progress signal — leaving them stale makes the issue lie about what's done.
+
+Update the description with `mcp__linear__save_issue`, passing the full description with the relevant `- [ ]` flipped to `- [x]`. Do not rewrite or reorganize the surrounding text — only flip the box. Update as each item finishes, not in a single batch at the end; partial progress is what the checkboxes exist to show.
+
+If the issue description has no task list, skip this step — do not invent one.
+
 ## Phase 5: Self-Review
 
 Once implementation is complete, run a **whole-branch code review** before pushing. The review covers the entire diff from the base branch to HEAD — not just the most recent commit — so any finding anywhere in the branch's history is in scope.
