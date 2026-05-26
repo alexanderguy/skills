@@ -147,6 +147,47 @@ A commit message must stand alone. Do not reference:
 
 Someone reading `git log` years from now, with only the repo in hand, should understand the change without leaving the message.
 
+**Body content — what belongs in a commit message:**
+
+The failure mode this rule prevents is over-explanation of the change itself — bodies that paraphrase the diff or document the code instead of giving the reader context the repo cannot. A commit body is for things specific to *this change* that would be lost if not captured here: why the change was made, what motivated this approach over alternatives, constraints or trade-offs that shaped the decision, non-obvious consequences a future reader needs to know about.
+
+A commit body is not a substitute for documentation that belongs elsewhere. Before writing a line of body, ask where that information actually lives:
+
+- **Describes what the code does** → the code already says this. Cut it.
+- **Describes how the system works in general** → belongs in repo documentation (README, design docs). If the docs are missing or wrong, update them in this commit; don't smuggle the explanation into the commit message.
+- **Describes why a specific line or block exists, and the rationale meets the bar in "Avoiding Redundant Comments"** → put it in a code comment at that line, not in the body. If the rationale doesn't meet that bar, it doesn't belong in a comment *or* the body.
+- **Walks through the diff file-by-file or restates what the diff shows** → cut it. (The "Self-contained" rule above already bans naming files; this extends the same principle to structural narration of the diff.)
+- **Recaps the conversation, review, or planning that led to the change** → already covered by "Self-contained" above. Listed here as a reminder: it is one of the most common ways bodies get bloated.
+
+What remains after those cuts — the motivation, the reasoning, the trade-offs, the non-obvious consequences — is what the body is for. Write that, in as many or as few lines as it honestly takes.
+
+**Good body:**
+
+```
+Switch retries to exponential backoff with full jitter.
+
+Fixed-interval retries were producing synchronized thundering
+herds against the upstream rate limiter during partial outages,
+making recovery slower than no retries at all. Full jitter is the
+AWS-recommended variant and the only one that decorrelates retries
+across clients without losing the backoff guarantee.
+```
+
+**Bad body (same change):**
+
+```
+Update retry logic in client.ts.
+
+Changes the retry loop in send() to use exponential backoff instead
+of a fixed interval. The new code computes a delay of
+random(0, base * 2^attempt) on each iteration and sleeps for that
+duration before retrying. Also updates the unit tests in
+client.test.ts to cover the new behavior. See the discussion in
+the PR for why we picked full jitter.
+```
+
+The bad version paraphrases the diff (the loop change, the formula, the test update), names files, and points at an external discussion. The good version assumes the reader can read the diff and tells them only what the diff cannot: *why* the old approach was wrong and *why* this specific variant was chosen.
+
 ## Naming
 
 ### Acronyms
