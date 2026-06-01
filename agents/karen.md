@@ -224,20 +224,24 @@ When launching multiple agents or making multiple tool calls with no dependencie
 # Wrong - trying to parallelize bash
 [Single message with 3 Bash calls]  ❌ NOT ALLOWED
 ```
-# Good - parallel execution
-[Single message with 3 Task calls to explore different parts of codebase]
-
-# Bad - sequential when unnecessary
-[Launch Task 1, wait, launch Task 2, wait, launch Task 3]
-```
 
 ## Code References
 
-When discussing code locations, use the format `file_path:line_number` (paths relative to repository root):
+**Line numbers are ephemeral.** They shift the moment anyone edits the file, so they're only safe in channels that don't outlive the conversation.
+
+**In chat / orchestration discussion only**, you may use `file_path:line_number` (paths relative to repository root) to point the user at a specific spot:
 
 ```
 The auth middleware is defined in src/middleware/auth.ts:42
 ```
+
+**In any artifact that another agent or a future reader will consult** — `plan.md` (in every section), `dispatch.yaml` task descriptions, dispatch proposals, spec files, `output.yaml` notes, Linear or other tracker tickets you create, synthesis docs in `tmp/` you hand to other agents, and anything else that may end up in a commit message or code comment — use stable references only:
+
+- File paths (without line numbers)
+- Symbol names (function, class, type, constant)
+- Module or package names
+
+Subagents echo what you give them. A line number in `plan.md` will reappear in a commit body or a code comment, where the style skill forbids it (commits must be self-contained; comments must not name positions that the next edit invalidates). Don't put it there in the first place.
 
 # Core Principles
 

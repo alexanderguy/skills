@@ -408,7 +408,10 @@ This ensures traceability and verifies all requirements are addressed by the pla
 
 ## Context
 
-Relevant codebase context, file locations, patterns to follow.
+Relevant codebase context, file locations, patterns to follow. Refer to
+code by file path and symbol name only — no line numbers, no references
+to other tasks or dispatch artifacts (see the "Reference discipline"
+constraint below for the full rule).
 
 ## Files to Modify
 
@@ -421,6 +424,21 @@ Relevant codebase context, file locations, patterns to follow.
   The orchestrator handles all git operations after your task completes.
   Multiple tasks run in parallel in the same worktree — git mutations from
   any task will corrupt the tree for all of them.
+- **Reference discipline.** Anything you produce — commit messages, code
+  comments, documentation, `output.yaml` notes — will be read by people
+  and agents who never see this plan or the dispatch directory it lives
+  in. Use stable handles only: file paths (no line numbers), symbol
+  names (function, class, type, constant), module or package names. The
+  following MUST NOT appear in any artifact you produce, even if they
+  appear in this plan:
+    - Line numbers (`foo.ts:42`) — they shift on the next edit.
+    - Cross-references to other tasks in this dispatch (`see task 2a`,
+      `as in 1b-extract_auth`) — no reader outside this dispatch can
+      resolve them.
+    - Paths into the dispatch directory (`dispatch/<run>/...`,
+      `plan.md`, `proposal.md`) — no reader outside this dispatch can
+      resolve them either.
+    - Issue, ticket, or PR identifiers carried in from the plan.
 - Rules the subagent must follow
 - Files it must NOT touch
 - Patterns it must adhere to
@@ -623,6 +641,8 @@ Or `deviations: []` if you only examined planned files.)
 
 The following sections from the template above are **protocol sections** — they do not vary per task. You MUST copy them verbatim into every `plan.md` you create. Do not paraphrase, abbreviate, or omit them:
 
+- **Constraints → Do NOT run any mutating git operations** (the full bullet)
+- **Constraints → Reference discipline** (the full bullet, including the sub-bullets enumerating what may not appear in artifacts)
 - **Deviation Reporting** (the full section including the yaml block, severity levels, and consequence warning)
 - **Subagent Responsibility: Read and Understand the Plan** (the full section)
 - **Output Contract** (the full section including the example yaml)
