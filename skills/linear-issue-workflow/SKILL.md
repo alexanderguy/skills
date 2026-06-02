@@ -15,48 +15,7 @@ Fetch the Linear issue using `mcp__linear__get_issue`. The returned issue includ
 
 Ask the user clarifying questions if the scope is unclear before proceeding.
 
-## Phase 2: Explore and Plan
-
-1. Use the `explore` subagent to understand the codebase:
-   - Where changes need to be made
-   - Existing patterns to follow
-   - Related code that might be affected
-
-2. Create an implementation plan covering:
-   - Files to modify
-   - New functions/types to add
-   - Tests to write
-
-3. Present the plan to the user and ask if they would like any changes before proceeding. Do not start implementation until the user approves the plan.
-
-4. Attach the plan as a file to the Linear issue. **Do not post the plan as a comment** — comments are for discussion, not archives, and a multi-page plan dumped inline creates noise on the issue.
-
-   The procedure has four steps, three of which are MCP or HTTP calls. The signed upload URL from `prepare_attachment_upload` expires 60 seconds after it is returned, so steps 2 and 3 must happen in immediate succession — do not pause for unrelated work between them.
-
-   1. Write the plan to a file under `tmp/` (e.g., `tmp/plan-<ISSUE-ID>.md`). `tmp/` is the project's throwaway directory — do not commit the file (and if the project does not yet have `tmp/` gitignored, do not add to git). Capture its byte size with `wc -c < tmp/plan-<ISSUE-ID>.md`.
-
-   2. Call `mcp__linear__prepare_attachment_upload` with `issue`, `filename`, `contentType: "text/markdown"`, and `size`. The response contains `uploadRequest.url`, `uploadRequest.headers`, and `assetUrl`. **Step 3 must follow within 60 seconds — the signed URL expires.**
-
-   3. PUT the raw file bytes to `uploadRequest.url`. Pass every header from `uploadRequest.headers` verbatim — exact casing is required; modified or omitted headers return HTTP 403. One `-H` flag per entry:
-
-   ```bash
-   curl -X PUT --data-binary @tmp/plan-<ISSUE-ID>.md \
-     -H "<header1-name>: <header1-value>" \
-     -H "<header2-name>: <header2-value>" \
-     "<uploadRequest.url>"
-   ```
-
-   Do not base64-encode the file, do not transform it. If the PUT fails with 403 because the URL expired (more than 60 seconds since step 2), **call `prepare_attachment_upload` again for a fresh URL** — retrying the dead URL will keep failing.
-
-   4. Call `mcp__linear__create_attachment_from_upload` with `issue`, the `assetUrl` from step 2, `title: "Implementation plan"`, and `subtitle: "<ISSUE-ID>"` (so the entry stays identifiable if multiple plans accumulate across re-plans).
-
-   Delete the local file after the attachment is created — the Linear issue now holds the canonical copy.
-
-   Exception: plans with no structure — no file-by-file breakdown, no enumerated steps, no headings, no nested lists — can be posted as a comment instead. Structural shape, not length, is the test; a single-sentence plan is fine inline, a 10-line bulleted plan is not.
-
-5. Mark the issue as "In Progress" using `mcp__linear__save_issue` with the appropriate state.
-
-## Phase 3: Set Up Worktree
+## Phase 2: Set Up Worktree
 
 Read the branch name from the `branchName` field on the issue fetched in Phase 1 (call `mcp__linear__get_issue` again if needed).
 
@@ -85,11 +44,54 @@ Then install local dependencies (look at developer documentation for how to do t
 
 Worktrees share the `.git` directory but have their own working directory. The `node_modules` directory is NOT shared, so each worktree needs its own dependency installation.
 
-All subsequent work happens in the worktree directory.
+All subsequent work — exploration, planning, implementation, and review — happens in the worktree directory.
+
+## Phase 3: Explore and Plan
+
+1. Use the `explore` subagent to understand the codebase. Brief it with the absolute path to the worktree (it must `cd` there before doing anything else), and ask it to cover:
+   - Where changes need to be made
+   - Existing patterns to follow
+   - Related code that might be affected
+
+2. Create an implementation plan covering:
+   - Files to modify
+   - New functions/types to add
+   - Tests to write
+
+3. Present the plan to the user and ask if they would like any changes before proceeding. Do not start implementation until the user approves the plan.
+
+   If the user rejects the plan and the issue cannot be salvaged with a revised plan, tear down the worktree and branch with the Phase 7 commands rather than leaving them stranded.
+
+4. Attach the plan as a file to the Linear issue. **Do not post the plan as a comment** — comments are for discussion, not archives, and a multi-page plan dumped inline creates noise on the issue.
+
+   The procedure has four steps, three of which are MCP or HTTP calls. The signed upload URL from `prepare_attachment_upload` expires 60 seconds after it is returned, so steps 2 and 3 must happen in immediate succession — do not pause for unrelated work between them.
+
+   1. Write the plan to a file under the worktree's `tmp/` (e.g., `tmp/plan-<ISSUE-ID>.md`). `tmp/` is the project's throwaway directory — do not commit the file (and if the project does not yet have `tmp/` gitignored, do not add to git). Capture its byte size with `wc -c < tmp/plan-<ISSUE-ID>.md`.
+
+   2. Call `mcp__linear__prepare_attachment_upload` with `issue`, `filename`, `contentType: "text/markdown"`, and `size`. The response contains `uploadRequest.url`, `uploadRequest.headers`, and `assetUrl`. **Step 3 must follow within 60 seconds — the signed URL expires.**
+
+   3. PUT the raw file bytes to `uploadRequest.url`. Pass every header from `uploadRequest.headers` verbatim — exact casing is required; modified or omitted headers return HTTP 403. One `-H` flag per entry:
+
+   ```bash
+   curl -X PUT --data-binary @tmp/plan-<ISSUE-ID>.md \
+     -H "<header1-name>: <header1-value>" \
+     -H "<header2-name>: <header2-value>" \
+     "<uploadRequest.url>"
+   ```
+
+   Do not base64-encode the file, do not transform it. If the PUT fails with 403 because the URL expired (more than 60 seconds since step 2), **call `prepare_attachment_upload` again for a fresh URL** — retrying the dead URL will keep failing.
+
+   4. Call `mcp__linear__create_attachment_from_upload` with `issue`, the `assetUrl` from step 2, `title: "Implementation plan"`, and `subtitle: "<ISSUE-ID>"` (so the entry stays identifiable if multiple plans accumulate across re-plans).
+
+   Keep the local file through implementation and review — it is the working reference, colocated with the code in the worktree's `tmp/`. Phase 7's `git worktree remove` deletes it along with the rest of the worktree. The Linear attachment is the canonical copy; the local file is a working convenience for the active branch. Re-planning overwrites the local file — Linear retains prior versions as separate attachments via the `<ISSUE-ID>` subtitle.
+
+   Exception: plans with no structure — no file-by-file breakdown, no enumerated steps, no headings, no nested lists — can be posted as a comment instead. Structural shape, not length, is the test; a single-sentence plan is fine inline, a 10-line bulleted plan is not.
+
+5. Mark the issue as "In Progress" using `mcp__linear__save_issue` with the appropriate state.
 
 ## Phase 4: Implement
 
-Carry out the plan from Phase 2 in the worktree using whichever implementation approach fits the work and your role.
+Carry out the plan from Phase 3 in the worktree using whichever implementation approach fits the work and your role.
 
 Break the work into commit-sized units. Each commit should represent one logical change that can be reviewed and understood independently.
 
@@ -124,7 +126,7 @@ Dispatch the `critique` subagent for the file-by-file behavioral read, architect
 Brief the subagent with:
 
 - The absolute path to the worktree (it must `cd` there before doing anything else).
-- The base branch to diff against (the remote default branch resolved in Phase 3, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path. Make explicit that the review must cover the full `base..HEAD` range, every commit on the branch.
+- The base branch to diff against (the remote default branch resolved in Phase 2, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path. Make explicit that the review must cover the full `base..HEAD` range, every commit on the branch.
 - An instruction to load the `code-review` skill and follow its checklist against the current branch, *except* the items marked *(reviewer-of-record)* — the orchestrator has already run those.
 - The Linear issue ID and a one-line summary of the change's *intent* — what the change is for. "This branch refactors retry logic to use exponential backoff" is fine; "this branch should not introduce blocking calls in the sendPack path" pre-frames findings and is forbidden.
 - A request for a punch list of findings with `file:line` references — not PR-comment prose.
@@ -211,10 +213,10 @@ If the review came back clean, post a one-line comment saying so rather than ski
 
 ## Phase 7: Cleanup After Merge
 
-After the PR has been merged, clean up the worktree and local branch:
+After the PR has been merged — or after a Phase 3 plan rejection that abandons the issue — clean up the worktree and local branch. The orchestrator is still `cd`'d into the worktree from Phase 2; leave it before running these commands:
 
 ```bash
-# From the main repository directory (not the worktree)
+cd <path-to-main-repo>           # leave the worktree
 git fetch origin
 git worktree remove ../worktree/<branch-name>
 git branch -d <branch-name>
@@ -236,5 +238,5 @@ Common operations:
 | Get branch name | `mcp__linear__get_issue` (read `branchName` from result)                                          |
 | Update status   | `mcp__linear__save_issue` (set the state)                                                         |
 | Add comment     | `mcp__linear__save_comment`                                                                       |
-| Attach file     | `mcp__linear__prepare_attachment_upload` → PUT → `mcp__linear__create_attachment_from_upload` (see Phase 2 step 4) |
+| Attach file     | `mcp__linear__prepare_attachment_upload` → PUT → `mcp__linear__create_attachment_from_upload` (see Phase 3 step 4) |
 | List teams      | `mcp__linear__list_teams`                                                                         |
