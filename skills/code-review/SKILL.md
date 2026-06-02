@@ -186,6 +186,20 @@ Some properties — subtle concurrency bugs, performance pathologies, security g
 - "Convention compliance verified." → "diffed naming and error-handling shape in the new handlers against `src/api/user.ts` and `src/api/billing.ts`; same `Result<T, E>` return pattern, same `assert`-style guards," or strike.
 - "No race conditions." → "read `lock.go:42-68`, traced lock acquisition order; no acquire-while-holding cycles in those lines. Did not analyze interactions with `pool.go` or callers outside the diff."
 
+## Reviewer-of-Record Checks
+
+"Cite the Check" requires that affirmative claims have backing. This rule narrows it: for the checks below, the backing must be the reviewer-of-record's own eyes on raw output. The reviewer-of-record is the agent whose verdict ships — when a workflow delegates the deeper read to a subagent, the orchestrator remains the reviewer-of-record and these checks stay with them.
+
+Their value is in catching unknown-unknowns. A delegate asked for "a punch list of findings" returns things that fit the punch-list shape; `Bin 0 -> 8181 bytes` on a `.ts` file does not look like a finding, it looks like stat noise, and gets collapsed away. Only direct inspection preserves the signal.
+
+**Reviewer-of-record must run, in-session, and read the raw output:**
+
+- `git diff <base>...HEAD --stat` — scan for `Bin` markers on any file you did not expect to be binary (source code, markdown, config) and for files outside the branch's stated scope.
+- `git log --oneline <base>..HEAD` — confirm the commits on the branch match the issue's scope; unexpected or off-topic commits are stop conditions.
+- The subject and body audits enumerated under *Commit-Message Style Audit*. That section is the canonical command catalog and pattern list; this section's contribution is the delegation rule — those audits are reviewer-of-record, not subagent work.
+
+Delegating the deeper read (file-by-file behavioral review, architectural analysis, commit-message coherence) to a subagent is fine and often valuable for context isolation. Delegating the checks above is not — their value is the raw output landing in front of the reviewer-of-record's eyes.
+
 ## Commit-Message Coherence
 
 Each commit's message is a claim about what the commit contains. Verify that
@@ -210,7 +224,7 @@ surprised by what the diff actually contains, that is a problem worth raising.
 
 Coherence (above) checks that each message accurately describes its diff. Style audit checks that each message conforms to the project's commit-message rules (see the `style` skill, which is the canonical source for the prefix-family list and other rules). The two are independent; both have to be run.
 
-A subagent dispatched with "verify style compliance" will return a generic "looks fine" read. Each check below must be requested by name and produce output the reviewer actually inspects.
+Each check below is reviewer-of-record territory (see *Reviewer-of-Record Checks*) — run them in-session and read the raw output yourself. Do not delegate them; a subagent asked to "verify style compliance" will return a generic "looks fine" read with no audit trail.
 
 **Subject-line audits.** Most checks scan the output of:
 
@@ -257,12 +271,14 @@ Affirmative claims about these audits must cite the specific command whose outpu
 
 ## Review Checklist
 
+Items marked *(reviewer-of-record)* must be run by the agent whose verdict ships — see *Reviewer-of-Record Checks*. Do not delegate them to a subagent. Unmarked items are delegable.
+
 1. Determine the base branch using the methods in "Base Branch Determination"
-2. Run `git log --oneline <base>..HEAD` to understand the scope
-3. Run `git diff <base>...HEAD --stat` to see which files changed
+2. Run `git log --oneline <base>..HEAD` to understand the scope *(reviewer-of-record)*
+3. Run `git diff <base>...HEAD --stat` to see which files changed *(reviewer-of-record)*
 4. Review each changed file, focusing only on lines modified by the branch
 5. For every commit on the branch, verify:
     - Diff matches the commit message (see "Commit-Message Coherence")
-    - Subject and body pass the style audit (see "Commit-Message Style Audit")
+    - Subject and body pass the style audit (see "Commit-Message Style Audit") *(reviewer-of-record)*
 6. Check that new code follows project conventions
 7. Summarize findings with specific file:line references; cite the check behind any affirmative claim (see "Cite the Check")

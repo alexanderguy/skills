@@ -105,25 +105,41 @@ If the issue description has no task list, skip this step — do not invent one.
 
 Once implementation is complete, run a **whole-branch code review** before pushing. The review covers the entire diff from the base branch to HEAD — not just the most recent commit — so any finding anywhere in the branch's history is in scope.
 
-Dispatch the `critique` subagent to run the review using the `code-review` skill. Running it in a subagent keeps its full output out of the main context and gives an independent read of the diff.
+### Reviewer-of-Record Checks (in-session)
+
+The reviewer-of-record is the agent whose verdict ships — in this workflow, you, the orchestrator. Before delegating any part of the review, run the audits whose value depends on the reviewer-of-record's own eyes on raw output. The canonical command list and patterns live in `code-review`'s *Reviewer-of-Record Checks* and *Commit-Message Style Audit* sections; load `code-review` and follow them in this session.
+
+Read the raw output. Stop conditions — fix before continuing:
+
+- Any violation surfaced by the commit-message audits. The canonical pattern lists (prefixes, vague subjects, body issues, length limits) live in `style` and `code-review`'s *Commit-Message Style Audit*; this section does not maintain a copy.
+- `Bin` marker on any file you did not expect to be binary (source code, markdown, config).
+- Files in the diff outside the issue's scope.
+
+After fixing a stop condition, re-run the in-session checks. Repeat until the output is clean. Do not dispatch the subagent until then.
+
+### Subagent review (deeper read)
+
+Dispatch the `critique` subagent for the file-by-file behavioral read, architectural review, and commit-message coherence check. Running these in a subagent keeps the deeper output out of the main context and gives independent eyes on patterns.
 
 Brief the subagent with:
 
 - The absolute path to the worktree (it must `cd` there before doing anything else).
 - The base branch to diff against (the remote default branch resolved in Phase 3, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path. Make explicit that the review must cover the full `base..HEAD` range, every commit on the branch.
-- An instruction to load the `code-review` skill and follow its checklist against the current branch.
-- The Linear issue ID and a one-line summary of the intended change, so the reviewer can judge scope.
+- An instruction to load the `code-review` skill and follow its checklist against the current branch, *except* the items marked *(reviewer-of-record)* — the orchestrator has already run those.
+- The Linear issue ID and a one-line summary of the change's *intent* — what the change is for. "This branch refactors retry logic to use exponential backoff" is fine; "this branch should not introduce blocking calls in the sendPack path" pre-frames findings and is forbidden.
 - A request for a punch list of findings with `file:line` references — not PR-comment prose.
-- An instruction that the subagent's final message must be the full punch list verbatim, with no summarization or omission. The main agent will only see what the subagent returns; anything left out is lost.
+- An instruction that the subagent's final message must be the full punch list verbatim, with no summarization or omission. This prevents collapse during transmission; it does *not* prevent the more fundamental loss of signals that do not fit a punch-list shape at all (binary markers, surprising stat counts). Those belong to the reviewer-of-record checks above.
+
+Do **not** include author-supplied "blocking criteria" or "things to look for" in the brief. The skill itself is the criteria; supplementing it narrows the subagent's lens to what you already suspect might be wrong, suppressing unknown-unknowns. The intent summary above is bounded for the same reason — keep it to *what the change is for*, never *what the reviewer should find*.
 
 ### Fix every finding
 
 Treat the returned findings as a worklist and **fix every one**. The `code-review` skill's "Signal Over Noise" guidance has already filtered out pedantic taste-only nitpicks upstream — anything that survived to the punch list is something the reviewer judged worth the author's time. "Nit," "minor," "stylistic," and "suggestion" describe the reviewer's confidence about severity; they are not dispositions and do not authorize skipping. The only path to leaving a finding unfixed is a Greybeard waiver (see below).
 
 - Fix issues in additional commits, or via `git rebase -i` with `edit` on the target commit when a fix belongs on an earlier commit (mark the target `edit`, make the fix at the stop, `git commit --amend --no-edit`, `git rebase --continue`).
-- After fixing, re-dispatch the review subagent against the full branch as it now stands. Every re-review is a fresh, self-contained read of `base..HEAD` exactly as it is — no scoping to the delta from a prior pass, no carryover ledger of earlier findings. The new punch list is the only worklist; the previous one is gone.
+- After fixing, re-run the reviewer-of-record checks in-session, then re-dispatch the review subagent against the full branch as it now stands. Every re-review is a fresh, self-contained read of `base..HEAD` exactly as it is — no scoping to the delta from a prior pass, no carryover ledger of earlier findings. The new punch list is the only worklist; the previous one is gone.
 - Repeat fix-and-review until the review returns clean.
-- Cap at three re-reviews. If findings remain after the third, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix passes and the reviewer is still finding issues, list each outstanding finding with its `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
+- Cap at three re-reviews. The cap counts subagent dispatches; in-session check failures the orchestrator fixes between dispatches do not consume a slot. If findings remain after the third, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix passes and the reviewer is still finding issues, list each outstanding finding with its `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
 
 ### Waivers
 
