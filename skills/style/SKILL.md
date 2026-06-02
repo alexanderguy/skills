@@ -296,6 +296,16 @@ This means validation logic lives at the edge: HTTP handlers, CLI argument parse
 
 If invalid data can travel through multiple layers before something finally breaks, the validation boundary is in the wrong place.
 
+## Defaults
+
+Defaults live at the edge, alongside validation. The boundary that accepts user input — CLI argument parser, config loader, HTTP handler, public API entry point — is the one layer that knows what was supplied and what was omitted. That layer resolves omissions into concrete values and hands a fully-populated argument inward. Internal code receives required parameters and acts on them; it does not invent values the caller did not supply. This is "Constraint Ownership" from the `philosophy` skill applied to a specific question: who decides what an absent value means.
+
+The rule targets **read-site defaults** — code that asks "did I get a value?" and silently substitutes one when the answer is no. Concretely: no `getattr(obj, "key", default)`, no `dict.get(k, default)`, no `value || fallback` or `value ?? fallback` scattered through business logic. Each of these is a defaulting decision smuggled into a layer that does not own the input contract, and each colludes with swallowed errors — a missing value that should have raised at the boundary instead becomes a silent fallback three layers deep, indistinguishable from a value the user actually passed.
+
+Default parameter values on a function signature are a different shape and are fine *when the function is itself a boundary*: a config loader, a dataclass constructor that receives values crossing from edge to interior, the entry point of a recursion (its own first call is the edge for the accumulator). What is not fine is an internal helper deep in the call graph that papers over a caller forgetting to pass something. Optional configuration fields get resolved once, at load time, into a concrete config object with no optionals; inner code sees a fully-specified value and trusts it.
+
+To locate the edge in a multi-layer system, ask which single function or file decides what an absent value means. That layer is the edge. Anything deeper that re-decides is wrong. The exception is genuinely public library code where no single layer owns the contract — every caller is the edge. "Public" here means consumed across organization or API boundaries, not "shared across two internal modules"; the latter still has an edge, and the rule still applies one layer in.
+
 ## Build Verification
 
 Always run the full build command before declaring any task complete.
