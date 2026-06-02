@@ -129,17 +129,17 @@ Brief the subagent with:
 - The base branch to diff against (the remote default branch resolved in Phase 2, e.g. `origin/main`), so `code-review` does not dead-end on its "ask the user" path. Make explicit that the review must cover the full `base..HEAD` range, every commit on the branch.
 - An instruction to load the `code-review` skill and follow its checklist against the current branch, *except* the items marked *(reviewer-of-record)* — the orchestrator has already run those.
 - The Linear issue ID and a one-line summary of the change's *intent* — what the change is for. "This branch refactors retry logic to use exponential backoff" is fine; "this branch should not introduce blocking calls in the sendPack path" pre-frames findings and is forbidden.
-- A request for a punch list of findings with `file:line` references — not PR-comment prose.
-- An instruction that the subagent's final message must be the full punch list verbatim, with no summarization or omission. This prevents collapse during transmission; it does *not* prevent the more fundamental loss of signals that do not fit a punch-list shape at all (binary markers, surprising stat counts). Those belong to the reviewer-of-record checks above.
+- A request for findings with `file:line` references — not PR-comment prose.
+- An instruction that the subagent's final message must list every finding verbatim, with no summarization or omission. This prevents collapse during transmission; it does *not* prevent the more fundamental loss of signals that do not fit a finding shape at all (binary markers, surprising stat counts). Those belong to the reviewer-of-record checks above.
 
 Do **not** include author-supplied "blocking criteria" or "things to look for" in the brief. The skill itself is the criteria; supplementing it narrows the subagent's lens to what you already suspect might be wrong, suppressing unknown-unknowns. The intent summary above is bounded for the same reason — keep it to *what the change is for*, never *what the reviewer should find*.
 
 ### Fix every finding
 
-Treat the returned findings as a worklist and **fix every one**. The `code-review` skill's "Signal Over Noise" guidance has already filtered out pedantic taste-only nitpicks upstream — anything that survived to the punch list is something the reviewer judged worth the author's time. "Nit," "minor," "stylistic," and "suggestion" describe the reviewer's confidence about severity; they are not dispositions and do not authorize skipping. The only path to leaving a finding unfixed is a Greybeard waiver (see below).
+Treat the returned findings as a worklist and **fix every one**. The `code-review` skill's "Signal Over Noise" guidance has already filtered out pedantic taste-only nitpicks upstream — anything that survived to the final findings is something the reviewer judged worth the author's time. "Nit," "minor," "stylistic," and "suggestion" describe the reviewer's confidence about severity; they are not dispositions and do not authorize skipping. The only path to leaving a finding unfixed is a Greybeard waiver (see below).
 
 - Fix issues in additional commits, or via `git rebase -i` with `edit` on the target commit when a fix belongs on an earlier commit (mark the target `edit`, make the fix at the stop, `git commit --amend --no-edit`, `git rebase --continue`).
-- After fixing, re-run the reviewer-of-record checks in-session, then re-dispatch the review subagent against the full branch as it now stands. Every re-review is a fresh, self-contained read of `base..HEAD` exactly as it is — no scoping to the delta from a prior pass, no carryover ledger of earlier findings. The new punch list is the only worklist; the previous one is gone.
+- After fixing, re-run the reviewer-of-record checks in-session, then re-dispatch the review subagent against the full branch as it now stands. Every re-review is a fresh, self-contained read of `base..HEAD` exactly as it is — no scoping to the delta from a prior pass, no carryover ledger of earlier findings. The new findings replace the previous set; the previous are gone.
 - Repeat fix-and-review until the review returns clean.
 - Cap at three re-reviews. The cap counts subagent dispatches; in-session check failures the orchestrator fixes between dispatches do not consume a slot. If findings remain after the third, stop and surface the situation to the user directly. Do not soften it: tell the user plainly that the branch has been through three review-and-fix passes and the reviewer is still finding issues, list each outstanding finding with its `file:line`, and state explicitly that the branch is **not ready to push**. Do not proceed to Phase 6, do not propose a waiver, and do not offer to "just push anyway" — wait for the user to decide whether to keep iterating, rescope the issue, or abandon the branch.
 
@@ -147,69 +147,115 @@ Treat the returned findings as a worklist and **fix every one**. The `code-revie
 
 The only path to leaving a finding unfixed is a Greybeard waiver. If you believe a finding should not be fixed — because the "fix" would be pure churn (taste-only rewording, unrelated refactor, change the project has explicitly chosen not to make) or because you actively disagree with the reviewer — dispatch the `greybeard` subagent with the finding, your proposed disposition, and the relevant diff. **A Greybeard "waive" ruling is the waiver** — record it in the disposition note and move on; no further user sign-off is needed. Accept Greybeard's call by default. Escalate to the user only if (a) you actively disagree with Greybeard's ruling, or (b) the Greybeard subagent is unreachable or returns an unusable response. In either case, present both positions (or the failure mode) and let the user decide. Do not route routine waiver requests through the user, and never waive a finding on your own authority.
 
-The full punch list returned by the review subagent (and, if a re-review happened, the carried-over plus newly-reported findings, deduplicated) is what gets posted to the PR in Phase 6. Keep it intact.
+By the time the gate closes, every finding is fixed or Greybeard-waived; the findings themselves are iteration history and are not preserved as a Phase 6 artifact. Hold onto each Greybeard ruling — Phase 6 names the waivers as present-state exceptions on the branch and cites the ruling that authorized each one. Do not keep the fix SHAs, the fixed findings, or the per-iteration log; none of those describe the branch as it stands.
 
 ## Phase 6: Push and PR
 
-Once the Phase 5 gate has cleared (the review returned clean, or every remaining finding has a Greybeard waiver), ask the user for confirmation before pushing and creating the PR.
+Once the Phase 5 gate has cleared (the review returned clean, or every remaining finding has a Greybeard waiver), work through the steps below in order. Drafting precedes confirmation so the user authorizes specific artifacts — the title, body, and self-review comment — rather than a promise about what they will say.
 
-### Push and create PR
-
-Fetch the latest changes and rebase before pushing:
+### Rebase against the remote default branch
 
 ```bash
 git fetch origin
 git rebase origin/<default-branch>
 ```
 
-Verify the build still passes after rebasing, then push:
+Verify the build still passes after rebasing.
+
+### Re-derive the PR artifacts from the current diff
+
+The PR title, body, and self-review comment are PR-shaped artifacts and are bound by `code-review`'s *Describe the Branch As It Stands* rule: present-tense statements of what the code *does*, never past-tense narration of how it got there.
+
+Draft from the diff, not from memory. The implementation history is the single largest source of journey framing; memory of the work reliably reproduces it. Read the output of both:
+
+```bash
+git diff origin/<default-branch>...HEAD
+git log origin/<default-branch>..HEAD --format='%s'
+```
+
+The full diff matters, not just `--stat`. `--stat` shows filenames and line counts; a present-tense description of behaviour has to come from the diff itself.
+
+After drafting each artifact, scan it for past-tense verbs (`was`, `were`, `had`, `added`, `fixed`, `refactored`, `introduced`, `removed`, `updated`, `changed`) and rewrite each into present-tense. If the rewrite forces dropping a sentence because it has no current-state content, that sentence was journey narrative and should not have been in the artifact.
+
+### PR title shape
+
+A single present-tense statement of what the code does. `style`'s commit-subject rules apply: start with a verb, no leading prefix (no `feat:`, no `[scope]`, no ticket ID), no trailing punctuation, no abbreviations.
+
+### PR body shape
+
+```markdown
+## Summary
+
+<1-3 bullets describing what the code does, present tense>
+
+## Verification
+
+<facts that hold for the current branch — e.g. the build passes
+(`npm test` exits 0); the `<flow>` works end-to-end against `<env>`.
+State what is true now, not what was done.>
+
+Closes <ISSUE-ID>
+```
+
+`## Summary` and `## Verification` are the only sections in the body. Do not add `## Changes`, `## Context`, `## Notes`, or other sections — the diff is right there, and additional prose either restates the diff (past-tense) or re-narrates the journey (also past-tense).
+
+### Self-review comment shape
+
+The comment names the *current* state of the branch: clean, or carrying named Greybeard-waived exceptions. Never the iteration history, never the prior findings, never the SHAs of fixes.
+
+**Clean review (the common case).** A one-line comment body:
+
+```
+Self-review (`code-review` skill) returned clean.
+```
+
+**Waivers exist.** Name each waived finding as a present-state exception on the branch. Cite the Greybeard ruling as a present-state authorization, not as past-tense paraphrase. Describe what the current code *does*, not what an earlier iteration had:
+
+```markdown
+## Self-Review (`code-review` skill)
+
+The branch carries the following intentional exceptions, each authorized
+by Greybeard:
+
+- `<file:line>`: <present-tense description of what the current code
+  does>. Authorized by Greybeard on grounds of <present-tense reason —
+  e.g. "churn-avoidance", "alternative violates convention X">.
+```
+
+Do not paste the verbatim Phase 5 findings. Do not list fixes by SHA. Do not narrate the iteration history — not in the disposition, not in a "for context" preamble, not in a closing summary. The merged result is what ships; intermediate states are not part of the artifact.
+
+### Confirm with the user
+
+Surface the drafted title, body, and self-review comment to the user. The user confirms whether to push and post with those exact artifacts. Do not push until confirmed.
+
+### Push and post
 
 ```bash
 git push -u origin <branch-name>
-```
 
-Create the PR:
-
-```bash
 gh pr create \
-  --title "<title>" \
+  --title "<confirmed title>" \
   --reviewer <REVIEWER> \
   --body "$(cat <<'EOF'
-## Summary
-
-<1-3 bullet points>
-
-## Changes
-
-- `path/to/file.ts`: <what changed>
-
-## Testing
-
-<how it was tested>
-
-Closes <ISSUE-ID>
+<confirmed body, as drafted above>
 EOF
 )"
 ```
 
-### Post the self-review
+Post the self-review comment. For the clean case, the single-quoted form is enough (the backticks inside single quotes are literal, not command substitution):
 
-After the PR is created, post the review output captured in Phase 5 as a PR comment, with a brief note on how each finding was addressed (fixed or Greybeard-waived):
+```bash
+gh pr comment --body 'Self-review (`code-review` skill) returned clean.'
+```
+
+For the waivers case, use a heredoc:
 
 ```bash
 gh pr comment --body "$(cat <<'EOF'
-## Self-Review (`code-review` skill)
-
-<verbatim review output from Phase 5>
-
-### Disposition
-
-- <finding>: <fixed in <sha> | waived (Greybeard, <one-line ruling>)>
+<confirmed comment, as drafted above>
 EOF
 )"
 ```
-
-If the review came back clean, post a one-line comment saying so rather than skipping the step — the absence of findings is itself useful signal for reviewers.
 
 ## Phase 7: Cleanup After Merge
 
