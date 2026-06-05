@@ -39,6 +39,7 @@ Decorative comment blocks (ASCII art dividers, section headers) add visual noise
 - Non-obvious workarounds or edge cases
 - TODO/FIXME/XXX markers for work that is genuinely blocked (see below)
 - Business logic that requires explanation
+- Decisions to leave code looking suspect when the obvious change was considered and rejected (see below)
 
 ```
 // XXX - Temporary workaround until upstream fix
@@ -56,6 +57,8 @@ Do not use these markers for:
 - Decisions you didn't want to make ("TODO: figure out the right default")
 
 If you could do it now, do it now. A TODO is a promise to the reader that the work cannot be done yet; abusing the marker for work you simply chose not to do is dishonest and accumulates as dead weight in the codebase.
+
+**Decisions to leave code looking suspect.** When code reads like it should be changed — an obvious-seeming refactor, a missing guard, a branch that looks unused, a value that looks like it ought to be extracted — and the decision was to leave it as-is, the next reader will re-derive the same "fix" you already rejected. A short comment at the site naming *why* the obvious change was rejected breaks that cycle. State the reason, not the rejection: "kept inline because the extracted helper would need three call-site-specific parameters," not "intentionally not refactored."
 
 ### Comments describe the current code
 
