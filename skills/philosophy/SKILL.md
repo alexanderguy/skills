@@ -100,9 +100,9 @@ This symbiotic relationship informs our prioritization and decision-making.
 
 **Issues and tickets represent actual work to get done; not a hope or a dream.**
 
-An issue should be self-contained enough that it can be handed off at any moment.
+An issue should be self-contained enough that it can be handed off at any moment, and should fit in 2-3 days of human work.
 
-An issue shouldn't take longer than 2-3 days to implement.
+The day count is grooming shorthand, not a budget for whoever picks the issue up. If an issue won't fit, the groomer splits before assigning.
 
 A single feature can have many tickets; they're cheap, so use as many as makes things clear.
 
