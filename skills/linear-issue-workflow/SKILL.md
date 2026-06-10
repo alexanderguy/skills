@@ -52,11 +52,27 @@ All subsequent work — exploration, planning, implementation, and review — ha
    - Where changes need to be made
    - Existing patterns to follow
    - Related code that might be affected
+   - Definitions, callers, consumers, and tests for symbols and behaviors the
+     issue references but does not pin down
+
+   When `explore` returns, identify every assumption the plan would otherwise
+   have to make — a function shape inferred from its name, a behavior inferred
+   from a comment, an invariant inferred from the issue's framing. Re-dispatch
+   `explore` to verify each one before drafting the plan.
 
 2. Create an implementation plan covering:
    - Files to modify
    - New functions/types to add
    - Tests to write
+   - Commit order
+
+   Commit ordering follows dependency direction: a commit is foundational *to
+   another* if the second commit's code references symbols, types, or behavior
+   introduced in the first. Foundations land before their dependents; unrelated
+   commits can interleave. Include the order in the plan attached to Linear —
+   reviewers need it to spot dependency-direction mistakes. If planning shows
+   that a foundation won't actually carry the dependent work, fix the foundation's
+   plan rather than planning workarounds in its dependents.
 
 3. Present the plan to the user and ask if they would like any changes before proceeding. Do not start implementation until the user approves the plan.
 
