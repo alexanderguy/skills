@@ -1168,6 +1168,58 @@ When dispatch completes:
 
 If you're unsure whether the goal was actually achieved (verification passed but output doesn't match expectations), consult greybeard for a technical assessment.
 
+**Phase 5 is not the end of the branch.** Dispatch produces commits, not a pull request — its job ends at "commits exist." A green dispatch is a branch that has not yet been reviewed as a whole or pushed. Do not push, open a PR, or tell the operator the work is "done" from here. Proceed to Phase 6.
+
+## Phase 6: Finish and Open the PR
+
+A green dispatch is not a finished branch. Per-task verification proved each task built; critique audited each commit as it landed. Neither looked at `base..HEAD` as a single artifact, so neither could catch a defect that only exists *across* commits — a symbol defined in commit 3 and redefined in commit 9, a migration added early and contradicted late, a message series that drifted out of compliance after a reword. This phase exists to catch exactly those, and to gate the branch becoming a PR on a checklist that says *why* it is clean, not just that the tests pass. "Tests pass" is not "done."
+
+You may enter Phase 6 only after Phase 5 reporting is complete and the gate is green. Do not push or open a PR before completing this phase.
+
+### Step 1: Whole-Branch Review (reviewer-of-record)
+
+Invoke the `code-review` skill once, against `base..HEAD`, with yourself as reviewer-of-record. Brief it with the base branch to diff against explicitly — the remote default branch (e.g. `origin/main`) — so `code-review` does not dead-end on its "ask the user" base-determination path, and make explicit that the review must cover the full `base..HEAD` range, every commit on the branch:
+
+```
+skill(name="code-review")   # brief with the resolved base branch, e.g. origin/main, and the full base..HEAD range
+```
+
+This is the cross-commit half of the review split. Per-commit defects belong to critique inside the implement loop; whole-branch defects belong here. Do **not** ask critique to do a whole-branch pass — that creates two owners for one invariant. The split is deliberate:
+
+- **Critique (per-commit, already done):** defects within a single commit; that commit's message coherence and style as it landed.
+- **code-review (whole-branch, now):** defects visible only across commits; the reviewer-of-record checks (`git diff base...HEAD --stat` for stray `Bin` markers and out-of-scope files, `git log --oneline base..HEAD` for scope); and the closing commit-message sweep (next step).
+
+The `code-review` skill owns the command catalog for all of the above. Do not restate or reimplement its checks here — invoke it and read its raw output yourself. Its findings are yours to act on. Use the `code-review` skill defined in this repo — the whole-branch `base..HEAD` review that carries the commit-message audits. Do not substitute a working-diff review tool that only inspects uncommitted changes; it omits the whole-branch scope and the commit-message sweep.
+
+**Any finding it returns is a scope decision, not a judgment call you make alone.** Route every finding through section 9: consult greybeard, paste his recommendation verbatim, and escalate to the operator for any "accept as-is" or any unclear answer. A whole-branch finding does not get the Phase 4 "minor deviation, auto-accept" treatment — it is a review finding about touched code, and section 9 governs it regardless of how small it looks.
+
+### Step 2: Closing Commit-Message Sweep (reviewer-of-record)
+
+Critique audited each message as its commit landed. Your half is a final `base..HEAD` sweep confirming the **whole series** still complies with the `style` skill's commit conventions — the place drift hides is after rebases, rewords, and amend-fixups that happened *after* the per-commit audit ran.
+
+The `code-review` skill's *Commit-Message Style Audit* and *Commit-Message Coherence* sections are the canonical command catalog (subject prefixes, path references, trailing punctuation, vague subjects, the length-aware `awk` filters, body tracker/cross-commit/PR-comment references). Run them as reviewer-of-record — in-session, reading the raw output yourself — rather than re-deriving the patterns here. Do not delegate this to a subagent.
+
+Per-commit binary and per-commit message checks are critique's and are not repeated here; this sweep is strictly the whole-series pass.
+
+### Step 3: Finish the Finish — Closing Checklist
+
+Before the branch becomes a PR, walk this checklist. Items marked **GATE** block the PR — if one is not satisfied, you do not push; you either fix it or escalate. Items marked **CONFIRM** are facts you must positively establish and be able to cite a check for (per the `code-review` skill's "Cite the Check"); a CONFIRM you cannot back with a concrete check is a GATE failure by default.
+
+- **GATE — Full gate green.** The project's full pipeline (build, lint, test — `make` or its equivalent) exited clean on `HEAD`, not a subset. Cite the command and its exit status.
+- **GATE — Whole-branch review clean.** Step 1's code-review returned no open findings, or every finding has a section-9 disposition recorded (fix landed, follow-up commit on this branch, new issue filed with ID/URL, or operator-approved accept-as-is).
+- **GATE — Commit messages compliant.** Step 2's sweep is clean: no prefix/path/punctuation/vague-subject violations, no over-72 subject or body lines, no tracker or cross-commit or PR-comment references anywhere in `base..HEAD`. Cite the audit commands.
+- **GATE — Binary-clean / scope-clean.** `git diff base...HEAD --stat` shows no unexpected `Bin` markers on source/text files and no files outside the branch's stated scope. Cite the `--stat` read.
+- **GATE — Scope findings all dispositioned.** Every finding surfaced anywhere in this run — dispatch, critique, greybeard, this phase — has one of section 9's four dispositions. No finding is sitting in a TODO, a "follow-up" hand-wave, or a status-update aside. Section 9 owns this rule; this is the final confirmation that it was honored.
+- **GATE — Follow-up issues actually filed.** Every "new issue" disposition has a real issue ID or URL, created in this session. A promise to file later is a GATE failure.
+- **CONFIRM — Docs regenerated.** Any generated artifact the change invalidates (generated docs, schemas, lockfiles, API references) has been regenerated and is part of the branch. If nothing applies, state that you checked and nothing needed regeneration.
+- **CONFIRM — PR self-review explains *why* the branch is clean.** The PR description, derived fresh from `base...HEAD` (present tense, per the `code-review` skill's "Describe the Branch As It Stands"), states what the branch does and names the checks that back it — not merely that it passed. A reader should see the evidence, not a "tests pass" assertion.
+
+If any GATE fails, stop. Fix it, or — for anything that is a scope or product decision rather than a mechanical fix — escalate via section 9 or the question tool. Do not push a branch with an open GATE.
+
+### Step 4: Push and Open the PR
+
+Only once every GATE is satisfied: push the branch and open the PR, using the self-review from Step 3 as the description. Report the PR URL to the operator along with the cited evidence for each GATE. This — a pushed branch with a backed self-review — is "done." Nothing earlier is.
+
 # Decision-Making Authority
 
 You have authority to:
@@ -1186,6 +1238,7 @@ You do NOT have authority to:
 - Make architectural trade-offs without consulting greybeard
 - Continue indefinitely when fix loops aren't converging (consult greybeard)
 - Ignore verification failures or declare victory prematurely
+- **Push a branch or open a PR before completing Phase 6** (the whole-branch review, closing message sweep, and finish checklist are mandatory; a green dispatch is not a finished branch)
 - Change the user's objectives mid-stream without confirmation (use interview skill or question tool based on complexity)
 - **Handle significant deviations without escalation** (major deviations MUST escalate to user)
 - **Unilaterally classify review or critique findings as "out of scope" or "not important"** (route through section 9's escalation procedure)
