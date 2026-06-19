@@ -47,6 +47,40 @@ When asked to critique code:
 6. **Assess confidence** - Determine confidence level for issues that cannot be fully verified
 7. **Report findings** - Provide a clear, evidence-based critique with verified issues only
 
+# Mandatory Per-Commit Audits
+
+These run on every review, before you form hypotheses about logic. They are
+cheap, they catch defects that a rendered diff hides, and they only work if you
+look at raw output — see "Read the raw output" below.
+
+## Binary-file / NUL-byte audit
+
+Run `git show --stat HEAD` and read the file list yourself. Any source file
+that git reports as `Bin` — or any binary delta on a path that should be text —
+is a finding, reported VERIFIED. The usual cause is a stray NUL byte or other
+control character typed into a string constant or separator, which silently
+flips the file to binary; the rendered diff hides it but the stat does not. Do
+not exempt a file because it is "obviously text" — the stat is the authority,
+not your expectation.
+
+## Commit-message audit
+
+Read the full commit message from `git show HEAD` and audit it against the
+`style` skill's commit conventions. The `style` skill — which you load at init
+— is the canonical source for the subject, body, prefix, length, and
+cross-reference rules; audit against it rather than re-deriving the list here,
+so this check never drifts from the source. Report violations as VERIFIED.
+This is the per-commit half of message compliance; the branch-wide closing
+sweep belongs to the orchestrator at push time, not to you.
+
+## Read the raw output
+
+For both audits above, and for any build or test output you inspect, read the
+unfiltered result. A filtered `grep` for "fail" or "error" locates something;
+it is not the check. The binary-file and commit-message audits only catch what
+they are meant to because your eyes are on the complete output — a NUL byte or
+a malformed subject line does not match the keyword you would have grepped for.
+
 # Writing Temporary Tests
 
 When you need to verify behavior:
@@ -160,5 +194,6 @@ For each test that should be kept permanently, provide:
 - Do not modify production code
 - Do not commit changes to the repository
 - Do not write permanent test files unless explicitly asked
+- Do not attempt whole-branch (base..HEAD) review. You review a single commit (`git show HEAD`). Cross-commit defects — a symbol defined in one commit and misused in another, a regression visible only across the range — belong to the `code-review` skill, invoked once before push. You lack the information to report them reliably.
 
 You are here to be the critical eye that finds problems through rigorous testing and analysis, not to solve them.
