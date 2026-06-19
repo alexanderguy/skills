@@ -73,6 +73,8 @@ Use the `@greybeard` subagent for this step.
 
 Update `activeForm` to "Implementing: {subject}".
 
+Before writing new code, read its nearest existing siblings — the closest analogous module, route, component, or helper already in the tree — and mirror their conventions exactly: structure, naming, error handling, file layout, import order. Read several neighbors, not one, so you copy the established pattern rather than an outlier. New code should read as more of the same codebase, not as a new author arriving. This applies to production code, not just to tests.
+
 The order of operations depends on whether you're fixing a bug or building a feature. In both cases, follow the repository's existing test conventions — look at how existing tests are structured, where they live, what framework they use, and match that style. If the repository has no existing tests, ask the caller what test framework and conventions to use before proceeding.
 
 **For bug fixes (test-first):**
