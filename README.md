@@ -70,6 +70,17 @@ Disciplined per-commit workflow for standalone implementation work. Each commit 
 
 Standalone skill loaded on request. Not part of dispatch.
 
+### `bug-triage`
+
+Validate a filed bug against the source before fixing it. This skill:
+
+- Treats the report as a hypothesis and the code as the truth
+- Verifies every load-bearing claim with an adversarial, file:line-backed reader
+- Hunts the broader class of the same defect, then verifies the promoted siblings
+- Traces the contract/design question the ticket never asked
+- Stress-tests the proposed fix for relocation, version skew, and adjacent bugs
+- Splits the outcome into a tiny correctness fix plus an orthogonal robustness fix
+
 ### `code-review`
 
 Guidance for performing code reviews and pull request reviews. Includes:
