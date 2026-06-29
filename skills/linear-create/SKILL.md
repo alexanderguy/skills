@@ -52,10 +52,18 @@ For freeform input, estimate the scope:
 | Scope | Duration | Artifact |
 |-------|----------|----------|
 | Small | 1-3 days | Single issue |
-| Medium | 1-2 weeks | Project with issues |
+| Medium | 1-2 weeks | Project |
 | Large | Quarter+ | Initiative with projects |
 
 Present your assessment to the user and confirm before proceeding.
+
+### Do Not Populate Projects with Issues Unless Asked
+
+Creating a project does **not** imply creating issues inside it. When the user asks for a project (or scope assessment lands on a project), create the project and its milestones only. Do not break the work into issues and file them under the project unless the user has explicitly asked for issues.
+
+When you assess a request as project-scoped, your proposal in Phase 5 should offer the project and its milestones, without issues. If you believe the work would benefit from being broken into issues, ask the user whether they want that — do not assume it. Only create issues inside a project when the user has explicitly requested them, either up front or in response to that question.
+
+This does not apply to initiatives: an initiative is a container for projects, and the "Initiative with projects" assessment may propose the constituent projects (still without issues inside them unless asked).
 
 ## Phase 3: Interview
 
@@ -280,7 +288,7 @@ If a section has nothing meaningful to say in this update, omit it rather than p
 
 ## Phase 5: Review and Adjust
 
-Present the complete draft to the user:
+Present the complete draft to the user. For a project-scoped request, propose the project and its milestones only — do not include an issue breakdown unless the user explicitly asked for issues (see "Do Not Populate Projects with Issues Unless Asked"):
 
 ```
 I propose creating:
@@ -292,14 +300,19 @@ I propose creating:
   1. Basic auth flow complete
   2. SSO integration complete
 
+Would you like to adjust anything before I create this? (If you'd
+also like this broken into issues under the project, let me know.)
+```
+
+Only when the user has explicitly requested issues, include them in the proposal:
+
+```
 **Issues**:
 1. "Set up authentication database schema"
 2. "Implement login/logout flow"
 3. "Integrate SSO provider"
 4. "Add session management"
    - Blocked by: #2
-
-Would you like to adjust anything before I create these?
 ```
 
 Allow the user to:
@@ -322,10 +335,10 @@ Present options to the user when multiple choices exist.
 
 ### Creating Artifacts
 
-After user approval, create artifacts using the appropriate `mcp__linear__*` tools:
+After user approval, create artifacts using the appropriate `mcp__linear__*` tools. Only create the artifacts that were actually approved — in particular, do not create issues under a project unless the user explicitly requested them (see "Do Not Populate Projects with Issues Unless Asked"). Steps 2–4 apply only when issues are part of the approved scope:
 
 1. **Create container first** (initiative via `mcp__linear__save_initiative`, project via `mcp__linear__save_project`)
-2. **Create issues** in dependency order (`mcp__linear__save_issue`)
+2. **Create issues** in dependency order (`mcp__linear__save_issue`) — only if issues were approved
 3. **Set blocking relationships** between issues (via `mcp__linear__save_issue` parameters)
 4. **Add issues to project** (via `mcp__linear__save_issue` parameters)
 5. **Add projects to initiative** (via `mcp__linear__save_project` parameters)
@@ -381,8 +394,10 @@ Issue:
 
 ### Feature Request to Project and Issues
 
+This pattern applies only when the user has explicitly asked for issues as well as the project (see "Do Not Populate Projects with Issues Unless Asked"). If they asked only for a project, create the project and milestones and stop.
+
 ```
-User: "We need to add dark mode to the application"
+User: "We need to add dark mode to the application, broken into issues"
 
 Project: Add dark mode theme support
   Target: 2 weeks
@@ -400,6 +415,8 @@ Issues:
 ```
 
 ### Validation Project
+
+This request does not ask for issues, so the deliverable is the project and its milestones only. The experiment steps live as checkboxes in the project description, not as separate issues.
 
 ```
 User: "We need to validate if customers want our new <product-name> product"
@@ -425,7 +442,11 @@ Project: Get 10 customer leads for <product-name> through direct outreach
     2. Outreach completed
     3. Customer interviews recorded
     4. Analysis complete
+```
 
+Only if the user also asks for the work to be tracked as issues, add them under the project:
+
+```
 Issues:
   1. "Create target list for <product-name> outreach"
   2. "Create outreach collateral and templates"
