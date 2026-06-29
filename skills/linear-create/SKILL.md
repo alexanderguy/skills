@@ -237,10 +237,14 @@ Experiment
 * <Step 3>
 ```
 
-**Milestones**: Key checkpoints showing progression toward the goal. Examples:
+**Milestones**: Milestones mark *progress* toward the goal — the meaningful states the project passes through on its way to done. They are not a task list. Each milestone should represent a checkpoint a stakeholder would recognize as "we've reached a new stage," such that you could look at which milestones are complete and know how far along the project is.
+
+Milestones are optional — use only as many as there are real phases the work passes through, often two to five, sometimes fewer. A small or single-phase project may have none; do not manufacture milestones to hit a count. They describe phases or outcomes, not the individual steps required to get there:
 
 - Completion states: "Target list ready", "Outreach completed", "Analysis complete"
 - Phase labels: "MVP", "Full implementation", "Polish and launch"
+
+Do not create one milestone per task or mirror the issue list — that turns milestones into a duplicate to-do list and destroys their value as a progress indicator. If every issue has its own milestone, or the milestones read like the steps in the project description, collapse them into the few real phases the work moves through. Individual tasks belong in issues (when issues were requested) or as checkboxes in the description, not as milestones.
 
 ### Initiative Format
 
@@ -438,10 +442,9 @@ Project: Get 10 customer leads for <product-name> through direct outreach
     - [ ] Analyze results
 
   Milestones:
-    1. Target list and collateral ready
-    2. Outreach completed
-    3. Customer interviews recorded
-    4. Analysis complete
+    1. Outreach ready to launch
+    2. Outreach executed and interviews held
+    3. Results analyzed
 ```
 
 Only if the user also asks for the work to be tracked as issues, add them under the project:
