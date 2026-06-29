@@ -119,14 +119,43 @@ Instead:
 
 This applies equally when drafting from planning documents — extract the meaning, do not transcribe paths.
 
-### Specs Belong as Attachments
+### Specs Belong With the Artifact, Not as Local Paths
 
-If a spec, design document, or planning artifact needs to be preserved so an implementer can refer to it, attach it to the Linear artifact rather than referencing the local file path:
+If a spec, design document, or planning artifact needs to be preserved so an implementer can refer to it, store it on the Linear artifact rather than referencing the local file path. Once it lives in Linear, any reference inside an issue or project description should point to it — never to the original local file path.
 
-- Specs that describe an entire project's scope or design attach to the **project**
-- Specs that describe a single unit of work attach to the **issue** for that work
+There are **two distinct mechanisms**, and they attach to different things. Pick by what you are attaching it to:
 
-Use `mcp__linear__prepare_attachment_upload` followed by `mcp__linear__create_attachment_from_upload` (or `mcp__linear__create_attachment` for URL-based references) to upload the document. Once attached, any reference inside the issue or project description should point to the attached document — never to the original local file path.
+| Where it needs to live | Mechanism | Tool(s) |
+|------------------------|-----------|---------|
+| **Project** | Linear **document** | `mcp__linear__save_document` with the `project` parameter |
+| **Initiative / cycle / team** | Linear **document** | `mcp__linear__save_document` with the `initiative`, `cycle`, or `team` parameter |
+| **Issue** | Linear **document** OR file attachment | `mcp__linear__save_document` with `issue`, or the file-upload flow below |
+
+**Documents are the only way to attach a spec to a project.** The file-attachment tools (`mcp__linear__prepare_attachment_upload`, `mcp__linear__create_attachment_from_upload`, `mcp__linear__create_attachment`) **target an `issue` only** — their sole parent parameter is `issue`, so they cannot attach to a project, initiative, cycle, or team. Do not attempt to upload a file "to a project"; it will fail. Instead, create a document.
+
+#### Attaching a spec to a project (the common case)
+
+Use `mcp__linear__save_document` with the markdown content inline and the `project` set to the project's name, ID, or slug:
+
+```
+mcp__linear__save_document(
+  title: "Authentication Design Spec",
+  content: "<the full spec as markdown — literal newlines, not \\n>",
+  project: "<project name, ID, or slug>"
+)
+```
+
+This is the right move for any spec describing a whole project's scope or design. The same tool reparents to an `issue`, `initiative`, `cycle`, or `team` by passing the corresponding parameter instead — exactly one parent is required when creating.
+
+#### Attaching a file to an issue (binaries, PDFs, screenshots)
+
+When the artifact is a binary (PDF, image, archive) that belongs on a single **issue**, use the file-upload flow. Prepare, PUT the raw bytes, then finalize — one file at a time, because signed URLs expire in 60 seconds:
+
+1. `mcp__linear__prepare_attachment_upload` with `issue`, `filename`, `contentType`, `size`
+2. `PUT` the raw bytes to the returned `uploadRequest.url`, sending every header verbatim
+3. `mcp__linear__create_attachment_from_upload` with the `issue` and the returned `assetUrl`
+
+For markdown specs on an issue, prefer a document (`save_document` with `issue`) over a file attachment — it stays readable and searchable inside Linear.
 
 
 ### Issue Format
@@ -300,7 +329,8 @@ After user approval, create artifacts using the appropriate `mcp__linear__*` too
 3. **Set blocking relationships** between issues (via `mcp__linear__save_issue` parameters)
 4. **Add issues to project** (via `mcp__linear__save_issue` parameters)
 5. **Add projects to initiative** (via `mcp__linear__save_project` parameters)
-6. **Post project updates** (via `mcp__linear__save_status_update`, targeting the project resolved during the interview)
+6. **Attach specs and design docs** — for a project, create a Linear document with `mcp__linear__save_document` and the `project` parameter (the file-attachment tools only work on issues); for an issue, use a document or the file-upload flow. See "Specs Belong With the Artifact, Not as Local Paths" above.
+7. **Post project updates** (via `mcp__linear__save_status_update`, targeting the project resolved during the interview)
 
 Report created artifacts to the user with their URLs.
 
