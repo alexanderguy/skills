@@ -107,9 +107,16 @@ All subsequent work — exploration, planning, implementation, and review — ha
 
 ## Phase 4: Implement
 
-Carry out the plan from Phase 3 in the worktree using whichever implementation approach fits the work and your role.
+Carry out the plan from Phase 3 in the worktree. You **must** do this through one of two skills — `implement` or `dispatch`. Hand-rolling the initial implementation directly (editing files, running builds, and committing without loading either skill) is not permitted. Both skills exist precisely so that implementation happens under review discipline; bypassing them discards the Greybeard reviews, build gates, and Critique loops that make each commit trustworthy as it lands. (This bars ad-hoc *authoring* of the implementation — it does not bar the direct, continuously re-reviewed fixes Phase 5 prescribes for review findings.)
 
-Break the work into commit-sized units. Each commit should represent one logical change that can be reviewed and understood independently.
+Choose the skill by the shape of the Phase 3 plan:
+
+- **`implement`** — one agent works the commits in sequence, each through Greybeard review, a build gate, and a Critique loop. Use this when the plan is a **linear chain** of commits where each builds on the last, or when the work is small enough that parallelism buys nothing. This is the default; when the two are a toss-up, pick `implement`. The Phase 3 plan already supplies the commit boundaries `implement` expects its caller to define — hand it those commits directly.
+- **`dispatch`** — fan the work out to parallel subagents across a dependency graph, then fan in, validate, and commit. Use this only when the plan carries real **parallel width**: multiple workstreams that can genuinely proceed at once, not a linear chain dressed up as a graph. The Phase 3 plan (already attached to the Linear issue) *is* dispatch's input spec — dispatch's planning refines that plan into a task graph rather than re-exploring from a blank slate, and the user has already approved the plan's substance in Phase 3. Keep dispatch's default per-task commit strategy so each task lands as its own reviewable commit; do not use the `single` (squash-all) strategy.
+
+Load the chosen skill with the `skill` tool and follow it end to end. Do not read one of these skills and then paraphrase or approximate its steps in the main context — invoke it and execute its workflow as written.
+
+Whichever skill you use, the work lands as commit-sized units — each a single logical change that can be reviewed and understood independently.
 
 ### Keep the issue checkboxes current
 
